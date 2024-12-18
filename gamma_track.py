@@ -9,6 +9,7 @@ import os
 import csv
 import pytz
 import calendar
+import market_open
 
 
 # MQTT settings
@@ -379,32 +380,136 @@ def is_market_open():
 
     return True
 
-def main():
 
+def gamma_track_loop():
+        
+
+    try:
+
+        # Initialize MQTT client
+        client = mqtt.Client()
+        client.on_connect = on_connect
+        client.on_message = on_message
+
+    
+        # Connect to MQTT broker
+        client.connect(MQTT_BROKER, MQTT_PORT, 60)
+
+        # Start the message processor in a separate thread
+        processor_thread = threading.Thread(target=message_processor, daemon=True)
+        processor_thread.start()
+
+        # # Start the MQTT client loop
+        # client.loop_forever()
+
+        # Custom infinite loop to handle MQTT client loop
+        while True:
+            client.loop(timeout=1.0)  # process network traffic, with a 1-second timeout
+            time.sleep(1) 
+            market_open_flag, current_eastern_time = market_open.is_market_open2(open_offset=0, close_offset=0)
+
+            # current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
+            # current_eastern_day = current_eastern_time.strftime('%A')
+            # print(f'gamma_track: while market is open')
+            # print(f'open flag:{market_open_flag}, current East time: {current_eastern_day} {current_eastern_hhmmss}')
+
+            if market_open_flag == False:
+                current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
+                print(f'gamma_track: Market is closed at {current_eastern_hhmmss}, shutting down MQTT')
+                client.loop_stop()  # Stop the MQTT loop
+                client.disconnect()  # Disconnect from the MQTT broker
+                return
+
+    except Exception as e:
+        print(f"Error in gamma_track_loop MQTT connection: {e}")
+        return
+
+
+def wait_for_market_to_open():
     throttle_wait_display = 0
-
     print(f'gamma_track: waiting for market to open')
 
     while True:
-        if is_market_open():
+        market_open_flag, current_eastern_time = market_open.is_market_open2(open_offset=0, close_offset=0)
+        if market_open_flag:
             break
 
         throttle_wait_display += 1
         # print(f'throttle_wait_display: {throttle_wait_display}')
         if throttle_wait_display % 3 == 2:
+            current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
+            current_eastern_day = current_eastern_time.strftime('%A')
 
-            eastern = pytz.timezone('US/Eastern')
-            current_time = datetime.now(eastern)
-            eastern_time_str = current_time.strftime('%H:%M:%S')
 
-            print(f'gamma_track: waiting for market to open, current East time: {eastern_time_str}')
+
+            # eastern = pytz.timezone('US/Eastern')
+            # current_time = datetime.now(eastern)
+            # eastern_time_str = current_time.strftime('%H:%M:%S')
+
+            print(f'gamma_track: waiting for market to open, current East time: {current_eastern_day} {current_eastern_hhmmss}')
 
             pass
 
 
         time.sleep(10)
 
-    print(f'chain: market is open')
+
+
+
+
+
+
+
+
+
+
+
+
+
+def main():
+
+
+    while True:
+        wait_for_market_to_open()
+        gamma_track_loop()
+
+
+
+
+    throttle_wait_display = 0
+
+
+
+
+
+
+    print(f'gamma_track: waiting for market to open')
+
+    while True:
+        market_open_flag, current_eastern_time = market_open.is_market_open2(open_offset=0, close_offset=0)
+        if market_open_flag:
+            break
+
+        throttle_wait_display += 1
+        # print(f'throttle_wait_display: {throttle_wait_display}')
+        if throttle_wait_display % 3 == 2:
+            current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
+            current_eastern_day = current_eastern_time.strftime('%A')
+
+
+
+            # eastern = pytz.timezone('US/Eastern')
+            # current_time = datetime.now(eastern)
+            # eastern_time_str = current_time.strftime('%H:%M:%S')
+
+            print(f'gamma_track: waiting for market to open, current East time: {current_eastern_day} {current_eastern_hhmmss}')
+
+            pass
+
+
+        time.sleep(10)
+
+    print(f'gamma_track: market is now open')
 
 
     """
@@ -423,19 +528,38 @@ def main():
         processor_thread = threading.Thread(target=message_processor, daemon=True)
         processor_thread.start()
 
-        # Start the MQTT client loop
-        client.loop_forever()
+        # # Start the MQTT client loop
+        # client.loop_forever()
 
-
-
+        # Custom infinite loop to handle MQTT client loop
         while True:
-            print(f'gamma_track checking to see if market is no longer open')
-            if not is_market_open():
+            client.loop(timeout=1.0)  # process network traffic, with a 1-second timeout
+            time.sleep(1)  # wait for 1 second
+            market_open_flag, current_eastern_time = market_open.is_market_open2(open_offset=0, close_offset=0)
+            current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
+            current_eastern_day = current_eastern_time.strftime('%A')
+            print(f'gamma_track: while market is open')
+            print(f'open flag:{market_open_flag}, current East time: {current_eastern_day} {current_eastern_hhmmss}')
+
+            if market_open_flag == False:
                 print("Market is closed, shutting down MQTT...")
                 client.loop_stop()  # Stop the MQTT loop
                 client.disconnect()  # Disconnect from the MQTT broker
                 break
-            time.sleep(10)  # Check the market status every 60 seconds
+
+
+        
+
+        
+
+        # while True:
+        #     print(f'gamma_track checking to see if market is no longer open')
+        #     if not is_market_open():
+        #         print("Market is closed, shutting down MQTT...")
+        #         client.loop_stop()  # Stop the MQTT loop
+        #         client.disconnect()  # Disconnect from the MQTT broker
+        #         break
+        #     time.sleep(10)  # Check the market status every 60 seconds
 
 
 
