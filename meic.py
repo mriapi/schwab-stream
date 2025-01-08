@@ -16,6 +16,48 @@ from tabulate import tabulate
 import calendar
 import pytz
 import random
+import market_open
+import order
+import math
+import positions
+
+
+real_trading_flag = True
+
+# Define the list of entry times in EASTERN TIME, in 24-hour clock format
+# entry_times = ["13:00", "13:30", "14:00", "14:30", "14:45"]
+entry_times = ["13:48", "14:15"]
+
+
+
+# Define the Eastern Time zone
+eastern = pytz.timezone('US/Eastern')
+
+
+
+# Convert entry times to time objects
+entry_times = [datetime.strptime(t, "%H:%M").time() for t in entry_times]
+
+# Get the current time in Eastern Time zone
+current_time = datetime.now(eastern)
+
+# Load processed_times with entry times that have already been crossed
+processed_times = {
+    entry_time for entry_time in entry_times
+    if eastern.localize(datetime.combine(current_time.date(), entry_time)) <= current_time
+}
+
+# Create an empty DataFrame with the desired headers
+positions_df = pd.DataFrame(columns=["sym", "put_call", "qty", "trade_price", "now_price"])
+
+positions_lock = threading.Lock()
+
+my_hash = ""
+
+gbl_short_positions = []
+gbl_long_positions = []
+
+
 
 quote_df_lock = threading.Lock()
 
@@ -28,6 +70,8 @@ global prev_request_id
 prev_request_id = ""
 
 global gbl_round_trip_start
+
+end_flag = False
 
 
 
@@ -66,9 +110,9 @@ GRID_SUB_RESPONSE_TOPIC = "schwab/spx/grid/response/#"
 def on_connect(client, userdata, flags, rc):
 
     if rc == 0:
-        print("current_grid_tester: Connected to MQTT broker.")
+        print("meic: Connected to MQTT broker.")
         client.subscribe(GRID_SUB_RESPONSE_TOPIC)
-        print(f"current_grid_tester: Subscribed to topic: {GRID_SUB_RESPONSE_TOPIC}")
+        print(f"meic: Subscribed to topic: {GRID_SUB_RESPONSE_TOPIC}")
 
 
     else:
@@ -322,17 +366,37 @@ def display_spread(label_str, spread_list):
     disp_str = f'{label_str} {output}'
     print(disp_str)
     persist_string(disp_str)
-         
+
+
 
 
 # Thread function to process messages from the queue
-def process_message():
+def process_message(schwab_client):
     global spx_last_fl
     global gbl_total_message_count
+    global end_flag
+    global processed_times
 
     while True:
+        if end_flag == True:
+            print(f'meic process_message() end_flag True, returning')
+            return
+
+
+
         # Get the (topic, message) tuple from the queue
-        topic, payload = message_queue.get()
+        # topic, payload = message_queue.get()
+
+        try:
+            topic, payload = message_queue.get(timeout=1)  # 1 second timeout
+
+        except queue.Empty: 
+            continue
+
+
+
+
+
 
         gbl_total_message_count += 1
 
@@ -351,6 +415,7 @@ def process_message():
                     time.sleep(0.01)
                     continue
 
+
             end_time = datetime.now()
             current_time = end_time.strftime('%H:%M:%S')
             elapsed_time = end_time - gbl_round_trip_start
@@ -358,7 +423,7 @@ def process_message():
             elapsed_milliseconds = int(elapsed_time.total_seconds() * 1000)
 
             # Print the elapsed time in milliseconds
-            display_str = f'\nmeic: New tranche attempt at {current_time} Pacific Time.  Elapsed grid request/response time: {elapsed_milliseconds} mS'
+            display_str = f'\nmeic: tranche grid request at {current_time} Pacific Time.  Elapsed grid request/response time: {elapsed_milliseconds} mS'
             print(display_str)
             persist_string(display_str)
 
@@ -368,11 +433,58 @@ def process_message():
                 call_long,
                 put_short,
                 put_long,
-                spx_price) = recommender.generate_recommendation(payload_dict)
+                spx_price,
+                atm_straddle) = recommender.generate_recommendation(gbl_short_positions, gbl_long_positions,payload_dict)
             
+
             call_spread = spread_data(call_short, call_long, spx_price)
             put_spread = spread_data(put_short, put_long, spx_price)
 
+
+            
+
+
+
+            if 'net' in call_spread and 'net' in put_spread:
+
+
+                current_time_local = datetime.now()  # Get the current datetime object for comparison
+                current_time_local_str = current_time_local.strftime('%H:%M:%S')
+                
+
+                current_time = datetime.now(eastern)
+                current_time_str = current_time.strftime('%H:%M:%S')
+
+
+                print(f'checking entry_times at {current_time_str} (Eastern)')
+
+
+                print(f'Checking entry_times at {current_time_str} (Eastern)')
+
+                for entry_time in entry_times:
+                    # Convert entry_time to today's datetime in Eastern Time
+                    entry_time_today = eastern.localize(datetime.combine(current_time.date(), entry_time))
+
+                    # Check if the time is crossed but not processed
+                    if entry_time_today <= current_time and entry_time not in processed_times:
+                        # Check if it's within 5 minutes of the crossed time
+                        if (current_time - entry_time_today).total_seconds() <= 300:
+                            print(f'PLACING ORDER!!! at {current_time_str} (Eastern)')
+                            order.enter_spread_with_triggers(real_trading_flag, schwab_client, my_hash, "CALL", call_short, call_long, qty=1)
+                            order.enter_spread_with_triggers(real_trading_flag, schwab_client, my_hash, "PUT", put_short, put_long, qty=1)
+                        else:
+                            print(f"Skipped task for entry time {entry_time} (more than 5 minutes late)")
+
+                        # Mark the time as processed
+                        processed_times.add(entry_time)
+
+
+                pass
+
+
+            atm_string = f'SPX:{spx_price:.2f}, ATM straddle:{atm_straddle:.2f}'
+            print(atm_string)
+            persist_string(atm_string)
             display_spread("Call", call_spread)
             display_spread(" Put", put_spread)
 
@@ -396,6 +508,9 @@ def process_message():
                 put_syms_display = " Put " + put_syms
                 persist_string(put_syms_display)
                 print(put_syms_display)
+
+
+
 
 
 
@@ -448,16 +563,60 @@ def publish_grid_request():
 
 def meic_entry(schwab_client):
     global quote_df
+    global end_flag
+    global gbl_short_positions
+    global gbl_long_positions
 
     display_quote_throttle = 0
 
+    seconds_to_next_minute = market_open.seconds_until_even_minute() + 3
+
+    seconds_to_minute_int = math.floor(seconds_to_next_minute)
+
     while True:
         time.sleep(1)
+
+        if end_flag == True:
+            print(f'meic meic_entry() end_flag True, returning')
+            return
+
+
         display_quote_throttle += 1
 
 
-        # periodically Print the sorted DataFrame with the selected columns
-        if display_quote_throttle % 20 == 15:
+        # periodically request the current grid.  The response triggers further action
+        # if display_quote_throttle % 20 == 15:
+
+        seconds_to_next_minute -= 1
+        seconds_to_minute_int -= 1
+
+        # print(f'seconds_to_minute_int:{seconds_to_minute_int}')
+
+        if seconds_to_minute_int % 10 == 20:
+        # if seconds_to_minute_int == 55:
+            print("\nGetting account details with positions")
+            account_details = schwab_client.account_details(my_hash, fields="positions").json()
+
+            print(f'account_details type:{type(account_details)}, data:\n{account_details}')
+
+            pass
+
+
+
+        if seconds_to_next_minute <= 0:
+
+            # try get account details and short/long legs here
+            get_positions_success_flag, gbl_short_positions, gbl_long_positions = positions.get_positions2()
+
+            # print(f'get_positions2():\nsuccess flag:{get_positions_success_flag}')
+            
+            print(f'\nexisting short positions:\n{gbl_short_positions}\n')
+            print(f'existing long positions:\n{gbl_long_positions}\n')
+
+
+            seconds_to_next_minute = market_open.seconds_until_even_minute() + 3
+            seconds_to_minute_int = math.floor(seconds_to_next_minute)
+        
             # print(f'in meic_entry, caling publish_grid_request()')
             publish_grid_request()
             pass
@@ -513,83 +672,172 @@ def is_market_open():
 
 
 
-
-# Main function to set up MQTT client and start the processing thread
-def main():
-    global mqtt_client
-
-
+def wait_for_market_to_open():
     throttle_wait_display = 0
-
-    print(f'chain: waiting for market to open')
+    print(f'meic: waiting for market to open')
 
     while True:
-        if is_market_open():
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset=0)
+        if market_open_flag:
             break
 
         throttle_wait_display += 1
         # print(f'throttle_wait_display: {throttle_wait_display}')
         if throttle_wait_display % 3 == 2:
+            current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
+            current_eastern_day = current_eastern_time.strftime('%A')
 
-            eastern = pytz.timezone('US/Eastern')
-            current_time = datetime.now(eastern)
-            eastern_time_str = current_time.strftime('%H:%M:%S')
 
-            print(f'waiting for market to open, current East time: {eastern_time_str}')
+
+            # eastern = pytz.timezone('US/Eastern')
+            # current_time = datetime.now(eastern)
+            # eastern_time_str = current_time.strftime('%H:%M:%S')
+
+            print(f'meic: waiting for market to open, current East time: {current_eastern_day} {current_eastern_hhmmss}')
 
             pass
 
 
         time.sleep(10)
 
-    print(f'chain: market is open')
-
-
-    # Initialize MQTT client
-    mqtt_client = mqtt.Client()
-    # mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-
-    # Assign callback functions
-    mqtt_client.on_connect = on_connect
-    mqtt_client.on_message = on_message
-
-    # Connect to the MQTT broker
-    print("Connecting to MQTT broker...")
-    mqtt_client.connect(BROKER_ADDRESS)
-
-    app_key, secret_key, my_tokens_file = load_env_variables()
-
-    # create schwabdev client
-    schwab_client = schwabdev.Client(app_key, secret_key, tokens_file=my_tokens_file)
-
-
-    # Start the keyboard thread
-    # keboard_thread = threading.Thread(target=keyboard_handler_task, name="keyboard_handler_task")
-    # keboard_thread.daemon = True  # Daemonize thread to exit with the main program
-    # keboard_thread.start()
 
 
 
-    # Start the message processing thread
-    processing_thread = threading.Thread(target=process_message, name="process_message")
-    processing_thread.daemon = True  # Daemonize thread to exit with the main program
-    processing_thread.start()
 
-    # Start the meic_entry thread
-    # meic_entry_thread = threading.Thread(target=meic_entry, name="meic_entry")
-    meic_entry_thread = threading.Thread(target=meic_entry, name="meic_entry", args=(schwab_client,))
+def meic_loop():
+    global mqtt_client
+    global end_flag
+    global my_hash
 
-    meic_entry_thread.daemon = True  # Daemonize thread to exit with the main program
-    meic_entry_thread.start()
-
-    # Start the MQTT client loop (handles reconnects and message callbacks)
-    mqtt_client.loop_forever()
+    try:
 
 
+        throttle_wait_display = 0
+
+        print(f'meic: waiting for market to open')
+
+        while True:
+            if is_market_open():
+                break
+
+            throttle_wait_display += 1
+            # print(f'throttle_wait_display: {throttle_wait_display}')
+            if throttle_wait_display % 3 == 2:
+
+                eastern = pytz.timezone('US/Eastern')
+                current_time = datetime.now(eastern)
+                eastern_time_str = current_time.strftime('%H:%M:%S')
+
+                print(f'waiting for market to open, current East time: {eastern_time_str}')
+
+                pass
+
+
+            time.sleep(10)
+
+        print(f'meic: market is open')
+
+
+        # Initialize MQTT client
+        mqtt_client = mqtt.Client()
+        # mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+
+        # Assign callback functions
+        mqtt_client.on_connect = on_connect
+        mqtt_client.on_message = on_message
+
+        # Connect to the MQTT broker
+        print("Connecting to MQTT broker...")
+        mqtt_client.connect(BROKER_ADDRESS)
+
+        app_key, secret_key, my_tokens_file = load_env_variables()
+
+        # create schwabdev client
+        schwab_client = schwabdev.Client(app_key, secret_key, tokens_file=my_tokens_file)
+        linked_accounts = schwab_client.account_linked().json()
+        # print(f'linked_accounts type:{type(linked_accounts)}, data:\n{linked_accounts}\n')
+
+        try:
+            # Extract the hashValue
+            my_hash = linked_accounts[0]['hashValue']
+            # print("Hash value found:", my_hash)
+        except KeyError:
+            # Handle the case where 'hashValue' is not present
+            print("Key 'hashValue' not found in the linked_accounts list.")
+            end_flag = True
+            return
+
+        
+
+
+        # Start the keyboard thread
+        # keboard_thread = threading.Thread(target=keyboard_handler_task, name="keyboard_handler_task")
+        # keboard_thread.daemon = True  # Daemonize thread to exit with the main program
+        # keboard_thread.start()
+
+
+
+        # Start the message processing thread
+        processing_thread = threading.Thread(target=process_message, name="process_message", args=(schwab_client,))
+        processing_thread.daemon = True  # Daemonize thread to exit with the main program
+        processing_thread.start()
+
+        # Start the meic_entry thread
+        # meic_entry_thread = threading.Thread(target=meic_entry, name="meic_entry")
+        meic_entry_thread = threading.Thread(target=meic_entry, name="meic_entry", args=(schwab_client,))
+
+        meic_entry_thread.daemon = True  # Daemonize thread to exit with the main program
+        meic_entry_thread.start()
+
+        # Start the MQTT client loop (handles reconnects and message callbacks)
+        # mqtt_client.loop_forever()
+
+        while True:
+                mqtt_client.loop(timeout=1.0)  # process network traffic, with a 1-second timeout
+                # time.sleep(1) 
+                market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset=0)
+
+
+                if market_open_flag == False:
+                    end_flag = True
+                    current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
+                    print(f'meic: Market is now closed at {current_eastern_hhmmss}, shutting down MQTT')
+                    mqtt_client.loop_stop()  # Stop the MQTT loop
+                    mqtt_client.disconnect()  # Disconnect from the MQTT broker
+                    break
+
+                if end_flag == True:
+                    break
+                    
+
+        
+        
+        end_flag = True
+
+        print(f'meic: waiting for processing_thread and meic_entry_thread to end and join')
+        processing_thread.join()
+        meic_entry_thread.join()
+        print(f'meic:processing_thread and meic_entry_thread have finished')
+
+
+    except Exception as e:
+        print(f"Error in meic_loop(): {e}")
+        end_flag = True
+        return
+
+
+
+
+# Main function to set up MQTT client and start the processing thread
+def main():
+
+    while True:
+        wait_for_market_to_open()
+        meic_loop()
 
 
 # Entry point of the program
 if __name__ == "__main__":
-    print(f'chain: calling main')
+    print(f'meic: calling main')
     main()
-    print(f'chain: returned from main')
+    print(f'meic: returned from main')

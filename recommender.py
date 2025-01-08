@@ -51,27 +51,27 @@ import csv
 import pandas as pd
 import numpy as np
 from io import StringIO
-import picker_config
+import recommend_config
 import json
 import math
 
 
-# fetch the spread leg selection rules from the picker_config.py file
-grid_directory = picker_config.GRID_FILES_DIRECTORY # location of option grid data files
-strategy = picker_config.PICKER_STRATEGY
-strategy_desc = picker_config.PICKER_STRATEGY_DESC
-max_width = picker_config.MAX_SPREAD_WIDTH      # max spread width
-min_width = picker_config.MIN_SPREAD_WIDTH      # min spread width
-max_net_credit = picker_config.MAX_NET_CREDIT   # max net credit
-min_net_credit = picker_config.MIN_NET_CREDIT   # min net credit
-optimal_net_credit = picker_config.OPTIMAL_NET_CREDIT   # optimal credit
-max_long_val = picker_config.MAX_LONG_VAL       # max ask value for long leg
-min_long_val = picker_config.MIN_LONG_VAL       # min ask value for long leg
-min_spx_distance = picker_config.MIN_SPX_DISTANCE   # minimum difference bewteen strike price of the long leg 
+# fetch the spread leg selection rules from the recommend_config.py file
+grid_directory = recommend_config.GRID_FILES_DIRECTORY # location of option grid data files
+strategy = recommend_config.PICKER_STRATEGY
+strategy_desc = recommend_config.PICKER_STRATEGY_DESC
+max_width = recommend_config.MAX_SPREAD_WIDTH      # max spread width
+min_width = recommend_config.MIN_SPREAD_WIDTH      # min spread width
+max_net_credit = recommend_config.MAX_NET_CREDIT   # max net credit
+min_net_credit = recommend_config.MIN_NET_CREDIT   # min net credit
+optimal_net_credit = recommend_config.OPTIMAL_NET_CREDIT   # optimal credit
+max_long_val = recommend_config.MAX_LONG_VAL       # max ask value for long leg
+min_long_val = recommend_config.MIN_LONG_VAL       # min ask value for long leg
+min_spx_distance = recommend_config.MIN_SPX_DISTANCE   # minimum difference bewteen strike price of the long leg 
                                                     # and current price of SPX
 
-max_short_target = picker_config.MAX_SHORT_TARGET
-min_short_target = picker_config.MIN_SHORT_TARGET
+max_short_target = recommend_config.MAX_SHORT_TARGET
+min_short_target = recommend_config.MIN_SHORT_TARGET
 
 # print(f'grid_directory type:{type(grid_directory)}, value: <{grid_directory}>')
 # print(f'max_width type:{type(max_width)}, value: {max_width}')
@@ -718,19 +718,19 @@ def puts_grid_candidates(put_tbl_pd, spx_last_fl):
     put_selection_df = pd.DataFrame() # empty dataframe
     put_candidates_df = pd.DataFrame() # empty dataframe
 
-    if strategy == picker_config.STRATEGY_OPTIMAL_NET_CREDIT:
+    if strategy == recommend_config.STRATEGY_OPTIMAL_NET_CREDIT:
         put_candidates_df, put_selection_df = puts_picker_optimal_net(put_tbl_pd, spx_last_fl)
 
         return put_candidates_df, put_selection_df
     
-    elif strategy == picker_config.STRATEGY_SHORT_200_LONG_010:
+    elif strategy == recommend_config.STRATEGY_SHORT_200_LONG_010:
         pass
         put_candidates_df, put_selection_df = puts_picker_short200_long010(put_tbl_pd, spx_last_fl)
 
         return put_candidates_df, put_selection_df
     
     else:
-        print(f'Unsupported picker strategy: {picker_config.PICKER_STRATEGY_DESC}')
+        print(f'Unsupported picker strategy: {recommend_config.PICKER_STRATEGY_DESC}')
 
 
     return put_candidates_df, put_selection_df
@@ -748,18 +748,18 @@ def calls_grid_candidates(call_tbl_pd, spx_last_fl):
     call_selection_df = pd.DataFrame() # empty dataframe
     call_candidates_df = pd.DataFrame() # empty dataframe
 
-    if strategy == picker_config.STRATEGY_OPTIMAL_NET_CREDIT:
+    if strategy == recommend_config.STRATEGY_OPTIMAL_NET_CREDIT:
         call_candidates_df, call_selection_df = calls_picker_optimal_net(call_tbl_pd, spx_last_fl)
 
         return call_candidates_df, call_selection_df
     
-    elif strategy == picker_config.STRATEGY_SHORT_200_LONG_010:
+    elif strategy == recommend_config.STRATEGY_SHORT_200_LONG_010:
         call_candidates_df, call_selection_df = calls_picker_short200_long010(call_tbl_pd, spx_last_fl)
 
         return call_candidates_df, call_selection_df
     
     else:
-        print(f'Unsupported picker strategy: {picker_config.PICKER_STRATEGY_DESC}')
+        print(f'Unsupported picker strategy: {recommend_config.PICKER_STRATEGY_DESC}')
 
 
     return call_candidates_df, call_selection_df
@@ -814,6 +814,9 @@ def puts_grid_candidates_list(put_tbl_list, spx_last_fl):
 def is_valid(value):
     return value is not None and not math.isnan(value)   
 
+
+
+
 def display_list(option_list):
     try:
         for option in option_list:
@@ -823,6 +826,19 @@ def display_list(option_list):
             print(f"  Last: {option['last']} (Time: {option['last_time']})")
             print(f"  Strike: {option['STRIKE']}")
             print("-" * 40)
+    except KeyError as e:
+        print(f"KeyError: Missing key {e}. Exiting function.")
+        return
+    except Exception as e:
+        print(f"An error occurred: {e}. Exiting function.")
+        return
+    
+
+def display_syms_only(option_list):
+    try:
+        for option in option_list:
+            print(f"Symbol: {option['symbol']}")
+
     except KeyError as e:
         print(f"KeyError: Missing key {e}. Exiting function.")
         return
@@ -870,46 +886,92 @@ def display_lists(opt_short, opt_long):
         print(f'An error occurred: {e} while displaying opt_long, opt_long data:\n{opt_long}')
 
 
-def ten_max(option_list, spx_price, option_type, atm_straddle_value):
+
+def calc_short_target(current_EM):
+    global max_short_target, min_short_target
+    
+    # Set the variables EM_MAX and EM_MIN
+    # Note: the lower the EM_MAX, the higher the target price will 
+    EM_MAX = 27.00
+    EM_MIN = 7.00
+    
+    # Determine the value of adjusted_target
+    if current_EM <= EM_MIN:
+        adjusted_target = min_short_target
+    elif current_EM >= EM_MAX:
+        adjusted_target = max_short_target
+    else:
+        # Linearly interpolate between min_short_target and max_short_target
+        proportion = (current_EM - EM_MIN) / (EM_MAX - EM_MIN)
+        adjusted_target = min_short_target + proportion * (max_short_target - min_short_target)
+    
+    # Round adjusted_target to the nearest 0.05
+    adjusted_target = round(adjusted_target / 0.05) * 0.05
+    
+    return adjusted_target
+
+
+def ten_max(option_list, short_positions, long_positions, spx_price, option_type, atm_straddle_value):
 
     DEBUG_TEN_MAX = False
+
+    
         
     try:
+
+        # Create lists for call and put options
+        short_call_positions = [symbol for symbol in short_positions if "C0" in symbol]
+        short_put_positions = [symbol for symbol in short_positions if "P0" in symbol]
+        long_call_positions = [symbol for symbol in long_positions if "C0" in symbol]
+        long_put_positions = [symbol for symbol in long_positions if "P0" in symbol]
+
+        # print(f'in ten_max() 475')
+        # print(f'existing short_positions type:{type(short_positions)}, data:\n{short_positions}')
+        # print(f'existing long_positions type:{type(long_positions)}, data:\n{long_positions}')
+
+
+
+
+
 
         # print(f'in ten_max(), option_type:{option_type}, spx:{spx_price}')
         # print(f'in ten_max(), option_list type:{type(option_list)}, data:\n{option_list}')
 
 
-        # base_short_target = 1.8
-        base_short_target = max_short_target
-        my_short_target = base_short_target
-        atm_short_target = atm_straddle_value * 0.22
+        # # base_short_target 
+        # base_short_target = max_short_target
+        # my_short_target = base_short_target
+        # atm_short_target = atm_straddle_value * 0.22
 
-        if DEBUG_TEN_MAX == True:
-            print(f'base_short_target:{base_short_target} atm_short_target:{atm_short_target}, min_short_target:{min_short_target}')
+        # if DEBUG_TEN_MAX == True:
+        #     print(f'base_short_target:{base_short_target} atm_short_target:{atm_short_target}, min_short_target:{min_short_target}')
 
-        if atm_short_target < my_short_target:
-            if DEBUG_TEN_MAX == True:
-                print(f'atm target is less than my short (base) target, my_target is now atm target')
+        # if atm_short_target < my_short_target:
+        #     if DEBUG_TEN_MAX == True:
+        #         print(f'atm target is less than my short (base) target, my_target is now atm target')
             
-            my_short_target = atm_short_target
+        #     my_short_target = atm_short_target
 
-        else:
-            pass
-            # print(f'atm target is not less than my short (base) target')
-
-
-        if my_short_target < min_short_target:
-            # print(f'my_short_target is less than min_short_target:{min_short_target}, my_short_target is now min_short_target')
-            my_short_target = min_short_target
-        else:
-            # print(f'my_short_target is not less than min_short_target:{min_short_target}, keeping my_short')
-            pass
+        # else:
+        #     pass
+        #     # print(f'atm target is not less than my short (base) target')
 
 
-
+        # if my_short_target < min_short_target:
+        #     # print(f'my_short_target is less than min_short_target:{min_short_target}, my_short_target is now min_short_target')
+        #     my_short_target = min_short_target
+        # else:
+        #     # print(f'my_short_target is not less than min_short_target:{min_short_target}, keeping my_short')
+        #     pass
 
         # print(f'base_short_target:{base_short_target:.2f}, atm_short_target:{atm_short_target:.2f}, my_short_target:{my_short_target:.2f}')
+
+
+
+        # print(f'prev my_short_target:{my_short_target:.2f}')
+        my_short_target = calc_short_target(atm_straddle_value)
+        # print(f'new calc_short_target() my_short_target:{my_short_target:.2f} for atm_straddle_value:{atm_straddle_value:.2f}')
+
 
 
 
@@ -922,18 +984,48 @@ def ten_max(option_list, spx_price, option_type, atm_straddle_value):
         # Filter the out-of-the-money (OTM) options based on the type (CALL or PUT)
         if option_type == "CALL":
             otm_list = [opt for opt in option_list if opt.get('STRIKE') and opt['STRIKE'] > (spx_price + 2)]
+            short_otm_list = [item for item in otm_list if item['symbol'] not in short_call_positions]
+            long_otm_list = [item for item in otm_list if item['symbol'] not in long_call_positions]
         elif option_type == "PUT":
             otm_list = [opt for opt in option_list if opt.get('STRIKE') and opt['STRIKE'] < (spx_price - 2)]
+            short_otm_list = [item for item in otm_list if item['symbol'] not in short_put_positions]
+            long_otm_list = [item for item in otm_list if item['symbol'] not in long_put_positions]
         else:
             print("Invalid option_type:<{option_type}>. Must be 'CALL' or 'PUT'.")
             return [], []
+        
+        
+        # otm_list_len = len(otm_list)
+        # short_otm_list_len = len(short_otm_list)
+        # long_otm_list_len = len(long_otm_list)
+        # print(f'otm_list_len:{otm_list_len}')
+        # print(f'short_otm_list_len:{short_otm_list_len}')
+        # print(f'long_otm_list_len:{long_otm_list_len}')
+
+        # print(f'otm_list:')
+        # display_syms_only(otm_list)
+        # print()
+
+        # print(f'short_otm_list:')
+        # display_syms_only(short_otm_list)
+        # print()
+
+        # print(f'long_otm_list:')
+        # display_syms_only(long_otm_list)
+        # print()
+        
+ 
+        # print(f'short_otm_list type:{type(short_otm_list)}, data:\n{short_otm_list}')
+
+
+
 
 
         # print(f'20 otm_list len:{len(otm_list)}, data:')
         # display_list(otm_list)
 
 
-        if not otm_list:
+        if not short_otm_list or not long_otm_list:
             print("No OTM options found.")
             return [], []
         
@@ -948,7 +1040,7 @@ def ten_max(option_list, spx_price, option_type, atm_straddle_value):
         # # Select the short_leg based on the bid closest to 2.00
         # short_leg = min(otm_list, key=lambda opt: abs(opt.get('bid', float('inf')) - 2.00))
         # Select the short_leg based on the bid closest to my_short_target
-        short_leg = min(otm_list, key=lambda opt: abs(opt.get('bid', float('inf')) - my_short_target))
+        short_leg = min(short_otm_list, key=lambda opt: abs(opt.get('bid', float('inf')) - my_short_target))
         # print(f'Short Leg Selected.  short_leg type:{type(short_leg)},\n  data:<{short_leg}>')
 
         if not short_leg:
@@ -956,22 +1048,40 @@ def ten_max(option_list, spx_price, option_type, atm_straddle_value):
             return [], []
         
 
-        
+        # fifty_max_list_old = [
+        #     opt for opt in option_list
+        #     if opt.get('STRIKE') and 
+        #     (opt['STRIKE'] > short_leg['STRIKE'] if option_type == "CALL" else opt['STRIKE'] < short_leg['STRIKE']) and 
+        #     # 20 <= abs(opt['STRIKE'] - short_leg['STRIKE']) <= 50
+        #     15 <= abs(opt['STRIKE'] - short_leg['STRIKE']) <= 50
+
+        # ]
+
+
+        # print(f'fifty_max_list_old len:{len(fifty_max_list_old)}, data:')
+        # # display_list(fifty_max_list_old)
+        # display_syms_only(fifty_max_list_old)
+        # print()
 
 
 
         # Filter for the fifty_max_list: further OTM and 20 <= strike difference <= 50
         fifty_max_list = [
-            opt for opt in option_list
+            opt for opt in long_otm_list
             if opt.get('STRIKE') and 
             (opt['STRIKE'] > short_leg['STRIKE'] if option_type == "CALL" else opt['STRIKE'] < short_leg['STRIKE']) and 
             # 20 <= abs(opt['STRIKE'] - short_leg['STRIKE']) <= 50
             15 <= abs(opt['STRIKE'] - short_leg['STRIKE']) <= 50
 
         ]
+
+
         
         # print(f'fifty_max_list len:{len(fifty_max_list)}, data:')
-        # display_list(fifty_max_list)
+        # # display_list(fifty_max_list)
+        # display_syms_only(fifty_max_list)
+        # print()
+
 
         if not fifty_max_list:
             print("No valid fifty_max options found.")
@@ -1095,27 +1205,31 @@ def calculate_atm_straddle_value(chain):
 #[['Short Strike', 'Long Strike', 'Short Bid', 'Long Ask', 'Net Credit', 'SPX Offset', 'Spread Width'], [6030.0, 5980.0, 1.6, 0.1, 1.5, 10.1899999999996, 50.0]]
     
 
-def generate_recommendation(grid):
+def generate_recommendation(short_position_list, long_position_list, grid):
+
 
     my_call_short = []
     my_call_long = []
     my_put_short = []
     my_put_long = []
     spx_last_fl = None
+    atm_straddle_fl = None
 
     
     # print(f'grid type:{type(grid)}, data:\n{grid}')
 
     atm_straddle_value = calculate_atm_straddle_value(grid)
+    
     if atm_straddle_value == None:
         print(f'unable to calculate the ATM straddle')
-        return my_call_short, my_call_long, my_put_short, my_put_long, spx_last_fl
+        return my_call_short, my_call_long, my_put_short, my_put_long, spx_last_fl, atm_straddle_fl
     
     if atm_straddle_value < 1:
         print(f'ATM straddle value too low: {atm_straddle_value}')
-        return my_call_short, my_call_long, my_put_short, my_put_long, spx_last_fl
+        return my_call_short, my_call_long, my_put_short, my_put_long, spx_last_fl, atm_straddle_fl
     
-
+    atm_straddle_fl = float(atm_straddle_value)
+    
 
     # pretty_grid = json.dumps(grid, indent=4)
     # print(f'pretty_grid:\n{pretty_grid}')
@@ -1181,7 +1295,7 @@ def generate_recommendation(grid):
             
 
 
-            # Add item to either put_lis or call_list
+            # Add item to either put_list or call_list
             
 
             if 'P0' in item['symbol'] and is_valid(item['bid']) and is_valid(item['ask']):
@@ -1211,7 +1325,7 @@ def generate_recommendation(grid):
         # print(f'\n20 put_list type:{type(put_list)}, data:\n{put_list}\n')
 
 
-        my_call_short, my_call_long = ten_max(call_list, spx_last_fl, "CALL", atm_straddle_value)
+        my_call_short, my_call_long = ten_max(call_list, short_position_list, long_position_list, spx_last_fl, "CALL", atm_straddle_value)
         # print(f'\n10 ten_max CALL returned\nshort:{my_call_short}\nlong:{my_call_long}\n')
 
 
@@ -1219,7 +1333,7 @@ def generate_recommendation(grid):
         # print(f'Call Spread:')
         # display_lists(my_call_short, my_call_long)
 
-        my_put_short, my_put_long = ten_max(put_list, spx_last_fl, "PUT", atm_straddle_value)
+        my_put_short, my_put_long = ten_max(put_list, short_position_list, long_position_list, spx_last_fl, "PUT", atm_straddle_value)
         # print(f'\n30 ten_max PUT returned\nshort:{my_put_short}\nlong:{my_put_long}\n')
         
         # print(f'\n40 ten_max PUT returned:')
@@ -1249,7 +1363,7 @@ def generate_recommendation(grid):
         pass
 
 
-    return my_call_short, my_call_long, my_put_short, my_put_long, spx_last_fl
+    return my_call_short, my_call_long, my_put_short, my_put_long, spx_last_fl, atm_straddle_fl
 
 
 
