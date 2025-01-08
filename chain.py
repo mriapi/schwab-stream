@@ -15,10 +15,12 @@ import recommender
 from tabulate import tabulate
 import calendar
 import pytz
+import market_open
+import recommend_config
 
 quote_df_lock = threading.Lock()
 
-
+end_flag = False
 
 
 
@@ -435,10 +437,18 @@ def process_queried(topic, payload_dict):
 # Thread function to process messages from the queue
 def process_message():
     global spx_last_fl
+    global end_flag
 
     while True:
-        # Get the (topic, message) tuple from the queue
-        topic, payload = message_queue.get()
+        if end_flag == True:
+            print(f'chain process_message() end_flag True, returning')
+            return
+
+        try:
+            topic, payload = message_queue.get(timeout=1)  # 1 second timeout
+
+        except queue.Empty: 
+            continue
 
 
         payload_dict = json.loads(payload)
@@ -471,13 +481,26 @@ def process_message():
 
         time.sleep(0.1)
 
+def get_chain_desination_dir():
+    base_dir = r"C:\MEIC\chain"
 
+    # Get the current date in yymmdd format
+    current_date = datetime.now().strftime('%y%m%d')
+
+    # Create the full directory path
+    full_dir = os.path.join(base_dir, f"data_{current_date}")
+
+    # Create the directory if it does not already exist
+    os.makedirs(full_dir, exist_ok=True)
+
+    return full_dir
 
 
 
 def persist_string(string_data):
     # Define the directory and ensure it exists
-    directory = r"C:\MEIC\chain_data"
+    # directory = r"C:\MEIC\chain_data"
+    directory = get_chain_desination_dir()
     if not os.path.exists(directory):
         os.makedirs(directory)
     
@@ -500,7 +523,8 @@ def persist_list(list_data):
     # print(f'in persist_list, list_data:\n{list_data}')
 
     # Define the directory and ensure it exists
-    directory = r"C:\MEIC\chain_data"
+    # directory = r"C:\MEIC\chain_data"
+    directory = get_chain_desination_dir()
     if not os.path.exists(directory):
         os.makedirs(directory)
     
@@ -839,11 +863,20 @@ def segregrate_opt_grid(opt_grid):
 
 def meic_entry(schwab_client):
     global quote_df
+    global end_flag
 
     display_quote_throttle = 0
 
     while True:
         time.sleep(1)
+
+        if end_flag == True:
+            print(f'meic meic_entry() end_flag True, returning')
+            return
+
+
+
+
         display_quote_throttle += 1
 
         # print(f'display_quote_throttle:{display_quote_throttle}')
@@ -888,7 +921,8 @@ def meic_entry(schwab_client):
             # # current_datetime = datetime.now().strftime("%y%mdd%H%M%S")
             # current_datetime = datetime.now().strftime("%y%m%d%H%M%S")
             # print(f'current_datetime:{current_datetime}')
-            # directory = r"C:\MEIC\chain_data"
+            ## directory = r"C:\MEIC\chain_data"
+            # directory = get_chain_desination_dir()
             # filename = f"quote_{current_datetime}.json"
             # file_path = os.path.join(directory, filename)
             
@@ -939,7 +973,8 @@ def meic_entry(schwab_client):
                 current_datetime = datetime.now().strftime("%y%m%d%H%M%S")
                 current_hhmmss = datetime.now().strftime("%H:%M:%S")
                 # print(f'current_datetime:{current_datetime}')
-                directory = r"C:\MEIC\chain_data"
+                # directory = r"C:\MEIC\chain_data"
+                directory = get_chain_desination_dir()
                 filename = f"quote_{current_datetime}.json"
                 file_path = os.path.join(directory, filename)
                 
@@ -958,7 +993,7 @@ def meic_entry(schwab_client):
                 persist_string(section_divider_str)
                 
 
-                print(f'chain: saved grid/chain data to {file_path}')
+                print(f'chain: saved grid/chain data to {file_path} at {time_str}')
 
                 # print(f'quote_json type:{type(quote_json)}, data:\n{quote_json}')
                 persist_string(f'\nChain data file: {file_path}:')
@@ -1003,12 +1038,16 @@ def meic_entry(schwab_client):
                 # print(f'put_candidates type:{type(put_candidates)}, data:\n{put_candidates}')
                 # print(f'put_recommendation type:{type(put_recommendation)}, data:\n{put_recommendation}')
 
+                short_positions = []
+                long_positions = []
+
 
                 (call_short,
                     call_long,
                     put_short,
                     put_long,
-                    spx_price_picker) = recommender.generate_recommendation(quote_sorted_json)
+                    spx_price_picker,
+                    atm_straddle) = recommender.generate_recommendation(short_positions, long_positions, quote_sorted_json)
                 
                 # print(f'call_short type:{type(call_short)}, data\n{call_short}')
                 # print(f'call_long type:{type(call_long)}, data\n{call_long}')
@@ -1038,6 +1077,10 @@ def meic_entry(schwab_client):
                     # print()
                     # persist_string(f'\n{file_path}:')
                     persist_string(f'Spread recommendations at {current_hhmmss}')
+
+                    info_string = f'SPX:{spx_price_picker:.2f}, ATM straddle:{atm_straddle:.2f}, MAX TARGET:{recommend_config.MAX_SHORT_TARGET}, MIN TARGET:{recommend_config.MIN_SHORT_TARGET}'
+                    print(info_string)
+                    persist_string(info_string)
 
                     display_spread("Call", call_spread)
                     display_spread(" Put", put_spread)
@@ -1102,75 +1145,158 @@ def is_market_open():
 
 
 
-
-# Main function to set up MQTT client and start the processing thread
-def main():
-
-
+def wait_for_market_to_open():
     throttle_wait_display = 0
-
     print(f'chain: waiting for market to open')
 
     while True:
-        if is_market_open():
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset=0)
+        if market_open_flag:
             break
 
         throttle_wait_display += 1
         # print(f'throttle_wait_display: {throttle_wait_display}')
         if throttle_wait_display % 3 == 2:
+            current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
+            current_eastern_day = current_eastern_time.strftime('%A')
 
-            eastern = pytz.timezone('US/Eastern')
-            current_time = datetime.now(eastern)
-            eastern_time_str = current_time.strftime('%H:%M:%S')
 
-            print(f'chain: waiting for market to open, current East time: {eastern_time_str}')
+
+            # eastern = pytz.timezone('US/Eastern')
+            # current_time = datetime.now(eastern)
+            # eastern_time_str = current_time.strftime('%H:%M:%S')
+
+            print(f'chain: 1 waiting for market to open, current Eastern time: {current_eastern_day} {current_eastern_hhmmss}')
 
             pass
 
 
         time.sleep(10)
 
-    print(f'chain: market is open')
 
 
-    # Initialize MQTT client
-    mqtt_client = mqtt.Client()
+def chain_loop():
 
-    # Assign callback functions
-    mqtt_client.on_connect = on_connect
-    mqtt_client.on_message = on_message
+    global end_flag
 
-    # Connect to the MQTT broker
-    print("Connecting to MQTT broker...")
-    mqtt_client.connect(BROKER_ADDRESS)
+    
+    
 
-    app_key, secret_key, my_tokens_file = load_env_variables()
+    try:
 
-    # create schwabdev client
-    schwab_client = schwabdev.Client(app_key, secret_key, tokens_file=my_tokens_file)
+        throttle_wait_display = 0
+
+        print(f'chain: waiting for market to open')
+
+        while True:
+            if is_market_open():
+                break
+
+            throttle_wait_display += 1
+            # print(f'throttle_wait_display: {throttle_wait_display}')
+            if throttle_wait_display % 3 == 2:
+
+                eastern = pytz.timezone('US/Eastern')
+                current_time = datetime.now(eastern)
+                eastern_time_str = current_time.strftime('%H:%M:%S')
+
+                print(f'chain: 2 waiting for market to open, current Eastern time: {eastern_time_str}')
+
+                pass
 
 
-    # Start the keyboard thread
-    # keboard_thread = threading.Thread(target=keyboard_handler_task, name="keyboard_handler_task")
-    # keboard_thread.daemon = True  # Daemonize thread to exit with the main program
-    # keboard_thread.start()
+            time.sleep(10)
+
+        print(f'chain: market is open')
+
+
+        # Initialize MQTT client
+        mqtt_client = mqtt.Client()
+
+        # Assign callback functions
+        mqtt_client.on_connect = on_connect
+        mqtt_client.on_message = on_message
+
+        # Connect to the MQTT broker
+        print("Connecting to MQTT broker...")
+        mqtt_client.connect(BROKER_ADDRESS)
+
+        app_key, secret_key, my_tokens_file = load_env_variables()
+
+        # create schwabdev client
+        schwab_client = schwabdev.Client(app_key, secret_key, tokens_file=my_tokens_file)
+
+
+        # Start the keyboard thread
+        # keboard_thread = threading.Thread(target=keyboard_handler_task, name="keyboard_handler_task")
+        # keboard_thread.daemon = True  # Daemonize thread to exit with the main program
+        # keboard_thread.start()
 
 
 
-    # Start the message processing thread
-    processing_thread = threading.Thread(target=process_message, name="process_message")
-    processing_thread.daemon = True  # Daemonize thread to exit with the main program
-    processing_thread.start()
+        # Start the message processing thread
+        processing_thread = threading.Thread(target=process_message, name="process_message")
+        processing_thread.daemon = True  # Daemonize thread to exit with the main program
+        processing_thread.start()
 
-    # Start the meic_entry thread
-    # meic_entry_thread = threading.Thread(target=meic_entry, name="meic_entry")
-    meic_entry_thread = threading.Thread(target=meic_entry, name="meic_entry", args=(schwab_client,))
+        # Start the meic_entry thread
+        # meic_entry_thread = threading.Thread(target=meic_entry, name="meic_entry")
+        meic_entry_thread = threading.Thread(target=meic_entry, name="meic_entry", args=(schwab_client,))
 
-    meic_entry_thread.daemon = True  # Daemonize thread to exit with the main program
-    meic_entry_thread.start()
+        meic_entry_thread.daemon = True  # Daemonize thread to exit with the main program
+        meic_entry_thread.start()
 
-    # Start the MQTT client loop (handles reconnects and message callbacks)
-    mqtt_client.loop_forever()
+        # Start the MQTT client loop (handles reconnects and message callbacks)
+        # mqtt_client.loop_forever()
+
+        # mqtt_client.loop_forever()
+
+        while True:
+                mqtt_client.loop(timeout=1.0)  # process network traffic, with a 1-second timeout
+                # time.sleep(1) 
+                market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset=0)
+
+
+                if market_open_flag == False:
+                    end_flag = True
+                    current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
+                    print(f'meic: Market is now closed at {current_eastern_hhmmss}, shutting down MQTT')
+                    mqtt_client.loop_stop()  # Stop the MQTT loop
+                    mqtt_client.disconnect()  # Disconnect from the MQTT broker
+                    break
+
+                if end_flag == True:
+                    break
+
+
+
+
+        end_flag = True
+
+        print(f'chain: waiting for processing_thread and meic_entry_thread to end and join')
+        processing_thread.join()
+        meic_entry_thread.join()
+        print(f'chain:processing_thread and meic_entry_thread have finished')
+
+
+
+    except Exception as e:
+        print(f"Error in chain_loop(): {e}")
+        end_flag = True
+        return
+
+
+
+# Main function to set up MQTT client and start the processing thread
+def main():
+
+    test_destination = get_chain_desination_dir()
+
+    print(f'chain test_destination:{test_destination}')
+
+    while True:
+        wait_for_market_to_open()
+        chain_loop()
 
 
 

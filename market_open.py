@@ -4,6 +4,18 @@ import pytz
 from datetime import timedelta
 
 
+
+def seconds_until_even_minute_utc(current_time_utc):
+    # Calculate the next even minute boundary
+    next_even_minute = (current_time_utc + timedelta(minutes=1)).replace(second=0, microsecond=0)
+    
+    # Calculate the difference in seconds
+    time_difference = next_even_minute - current_time_utc
+    seconds_until_next_even_minute = time_difference.total_seconds()
+    
+    return seconds_until_next_even_minute
+
+
 def is_market_open2(open_offset=0, close_offset=0):
     OPEN_HOUR = 9
     OPEN_MINUTE = 30
@@ -25,7 +37,24 @@ def is_market_open2(open_offset=0, close_offset=0):
     # Create the market_open_flag
     market_open_flag = is_weekday and (market_open_time <= current_eastern_time <= market_close_time)
 
-    return market_open_flag, current_eastern_time
+    seconds_to_next_minute = seconds_until_even_minute_utc(current_time_utc)
+
+    return market_open_flag, current_eastern_time, seconds_to_next_minute
+
+
+
+def seconds_until_even_minute():
+    # Get the current local time
+    current_time = datetime.now()
+    
+    # Calculate the next even minute boundary
+    next_even_minute = (current_time + timedelta(minutes=1)).replace(second=0, microsecond=0)
+        
+    # Calculate the difference in seconds
+    time_difference = next_even_minute - current_time
+    seconds_until_next_even_minute = time_difference.total_seconds()
+    
+    return seconds_until_next_even_minute
 
 
 

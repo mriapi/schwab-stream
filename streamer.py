@@ -18,12 +18,16 @@ import logging
 import keyboard
 import pprint
 import queue
+import market_open
 
 # message queue
 message_queue = queue.Queue()
 
 # resource lock (mutex)
 message_lock = threading.Lock()
+
+MARKET_OPEN_OFFSET = 0
+MARKET_CLOSE_OFFSET = 0
 
 
 # Get the streamer version number from the file VERSIONS
@@ -225,6 +229,17 @@ def streamer_thread(client):
         print(f"108SEF strm_client.send(strm_client.level_one_equities($SPX): An error occurred: {e}")
         gbl_system_error_flag = True
         return
+    
+    # subscribe to account activity
+    try:
+        strm_client.send(strm_client.account_activity("Account Activity", "0,1,2,3"))
+
+    except Exception as e:
+        print(f"108SAA strm_client.send(strm_client.account_activity): An error occurred: {e}")
+        gbl_system_error_flag = True
+        return
+    
+    
 
 
     # streamer.send(streamer.level_one_equities("$SPX, TSLA, AAPL", "0,1,2,3,4,5,6,7,8"))
@@ -285,7 +300,14 @@ def streamer_thread(client):
         time.sleep(1)
 
         # we abort if the market is no longer open
-        if is_market_open() == False:
+
+        market_open_flag, current_eastern_time, seconds_to_next_minute = \
+            market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=MARKET_CLOSE_OFFSET)
+        
+        
+        if market_open_flag == False:
+        # if is_market_open() == False:
+
             gbl_market_open_flag = False
 
         abort_flag, abort_reason = any_abort_condition()
@@ -653,6 +675,7 @@ def any_abort_condition():
         return_val = True
 
     if gbl_market_open_flag == False:
+        print(f'any_abort_condition True because market open flag is false')
         reason_str += f'market close detected'
         return_val = True
 
@@ -963,6 +986,7 @@ def wait_for_market_to_open():
 
     global gbl_quit_flag
     global gbl_system_error_flag
+    global gbl_market_open_flag
 
     SECONDS_BETWEEN_CHECKS = 5
     ITERATIONS_BETWEEN_DISPLAY = int(60 / SECONDS_BETWEEN_CHECKS)
@@ -975,9 +999,19 @@ def wait_for_market_to_open():
         # print(f'1 wait market cnt:{market_wait_cnt}')
         market_wait_cnt += 1
 
-        if is_market_open():
+        market_open_flag, current_eastern_time, seconds_to_next_minute = \
+        market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=MARKET_CLOSE_OFFSET)
+        
+        if market_open_flag == True:
+        # if is_market_open():
+
+            gbl_market_open_flag = True
+
+            current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
+            current_eastern_day = current_eastern_time.strftime('%A')
+
             # print(f'is_market_open() returned True, exiting wait_for_market_to_open()')
-            print(f'Market is open. Current: {get_eastern_weekday_time()}')
+            print(f'Market is open. Current Eastern: {current_eastern_day}, {current_eastern_hhmmss}')
             return
         
         throttle_time_display += 1
@@ -1026,7 +1060,12 @@ def get_current_spx(client, milliseconds_since_epoch):
     # Loop until we have a good response for SPX price history
     while True:
 
-        if is_market_open() != True:
+        market_open_flag, current_eastern_time, seconds_to_next_minute = \
+            market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=MARKET_CLOSE_OFFSET)
+
+        if market_open_flag != True:
+        # if is_market_open() != True:
+
             print(f'in get_current_spx(), market is not open')
             gbl_market_open_flag = False
             return None, None, None, None
@@ -1198,7 +1237,7 @@ def build_strike_lists(client):
     global gbl_system_error_flag
 
 
-    strike_offset = 50
+    
 
 
     todays_epoch_time = get_today_in_epoch()
@@ -1231,11 +1270,15 @@ def build_strike_lists(client):
 
     # print(f'in build_strike_lists(), spx_low:{spx_low}, spx_high:{spx_high}')
 
+    STRIKE_RANGE_OFFSET = 250
+
     # Adjust spx_low and spx_high to be divisible by 5
     spx_low_strike = int(spx_low // 5 * 5)
-    spx_put_low_adjusted = spx_low_strike - 150
+    # spx_put_low_adjusted = spx_low_strike - 150
+    spx_put_low_adjusted = spx_low_strike - STRIKE_RANGE_OFFSET
     spx_high_strike = int((spx_high // 5 + 1) * 5)  # Adjust to the next higher strike
-    spx_call_high_adjusted = spx_high_strike + 150
+    # spx_call_high_adjusted = spx_high_strike + 150
+    spx_call_high_adjusted = spx_high_strike + STRIKE_RANGE_OFFSET
 
     # print(f'spx_put_low_adjusted:{spx_put_low_adjusted}, spx_low_strike:{spx_low_strike}, spx_high_strike:{spx_high_strike}')
 

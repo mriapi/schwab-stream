@@ -12,6 +12,13 @@ import calendar
 import market_open
 
 
+# Initialize data storage
+spx_last_prices = []
+spxw_gamma_values = {}
+spxw_delta_values = {}
+
+
+
 # MQTT settings
 MQTT_BROKER = "localhost"
 MQTT_PORT = 1883
@@ -46,32 +53,67 @@ def on_message(client, userdata, msg):
 
 
 
-# File paths to store the historical data in the specified directory
-PICKLE_DIR = r"C:\MEIC\gamma_track"
-SPXW_GAMMA_VALUES_FILE = os.path.join(PICKLE_DIR, 'spxw_gamma_values.pkl')
-SPX_LAST_PRICES_FILE = os.path.join(PICKLE_DIR, 'spx_last_prices.pkl')
-SPXW_CSV_FILE_PATH = os.path.join(PICKLE_DIR, 'spxw_gamma.csv')
-SPX_CSV_FILE_PATH = os.path.join(PICKLE_DIR, 'spx.csv')
+PICKLE_BASE_DIR = ""
+PICKLE_DIR = ""
+SPXW_GAMMA_VALUES_FILE = ""
+SPXW_DELTA_VALUES_FILE = ""
+SPX_LAST_PRICES_FILE = ""
+SPXW_CSV_FILE_PATH = ""
+SPX_CSV_FILE_PATH = ""
 
-# Ensure the directory exists
-if not os.path.exists(PICKLE_DIR):
-    os.makedirs(PICKLE_DIR)
 
-# Initialize data storage
-spx_last_prices = []
-spxw_gamma_values = {}
+def initialize_dated_destination():
+    global PICKLE_BASE_DIR
+    global PICKLE_DIR
+    global SPXW_GAMMA_VALUES_FILE
+    global SPXW_DELTA_VALUES_FILE
+    global SPX_LAST_PRICES_FILE
+    global SPXW_CSV_FILE_PATH
+    global SPX_CSV_FILE_PATH
 
-# Ensure persistence files exist
-if not os.path.exists(SPX_LAST_PRICES_FILE):
-    with open(SPX_LAST_PRICES_FILE, 'wb') as f:
-        pickle.dump(spx_last_prices, f)
 
-if not os.path.exists(SPXW_GAMMA_VALUES_FILE):
-    with open(SPXW_GAMMA_VALUES_FILE, 'wb') as f:
-        pickle.dump(spxw_gamma_values, f)
+
+    # File paths to store the historical data in the specified directory
+    PICKLE_BASE_DIR = r"C:\MEIC\gamma_track"
+
+    # PICKLE_DIR = r"C:\MEIC\gamma_track"
+
+    # Get the current date in yymmdd format
+    current_date = datetime.now().strftime('%y%m%d')
+
+    # Create the full directory path
+    PICKLE_DIR = os.path.join(PICKLE_BASE_DIR, f"data_{current_date}")
+
+    # Create the directory if it does not already exist
+    os.makedirs(PICKLE_DIR, exist_ok=True)
+
+    SPXW_GAMMA_VALUES_FILE = os.path.join(PICKLE_DIR, 'spxw_gamma_values.pkl')
+    SPXW_DELTA_VALUES_FILE = os.path.join(PICKLE_DIR, 'spxw_delta_values.pkl')
+    SPX_LAST_PRICES_FILE = os.path.join(PICKLE_DIR, 'spx_last_prices.pkl')
+    SPXW_CSV_FILE_PATH = os.path.join(PICKLE_DIR, 'spxw_gamma.csv')
+    SPX_CSV_FILE_PATH = os.path.join(PICKLE_DIR, 'spx.csv')
+
+    # Ensure the destination directory exists
+    if not os.path.exists(PICKLE_DIR):
+        os.makedirs(PICKLE_DIR)
+
+    # Ensure persistence files exist
+    if not os.path.exists(SPX_LAST_PRICES_FILE):
+        with open(SPX_LAST_PRICES_FILE, 'wb') as f:
+            pickle.dump(spx_last_prices, f)
+
+    if not os.path.exists(SPXW_GAMMA_VALUES_FILE):
+        with open(SPXW_GAMMA_VALUES_FILE, 'wb') as f:
+            pickle.dump(spxw_gamma_values, f)
+
+    if not os.path.exists(SPXW_DELTA_VALUES_FILE):
+        with open(SPXW_DELTA_VALUES_FILE, 'wb') as f:
+            pickle.dump(spxw_delta_values, f)
+
+
 
 def persist_data(json_message):
-    global spx_last_prices, spxw_gamma_values
+    global spx_last_prices, spxw_gamma_values, spxw_delta_values
 
     # Load existing data from files
     # with open(SPX_LAST_PRICES_FILE, 'rb') as f:
@@ -90,6 +132,10 @@ def persist_data(json_message):
         with open(SPXW_GAMMA_VALUES_FILE, 'wb') as f:
             pickle.dump(spxw_gamma_values, f)
 
+    if not os.path.exists(SPXW_DELTA_VALUES_FILE):
+        with open(SPXW_DELTA_VALUES_FILE, 'wb') as f:
+            pickle.dump(spxw_delta_values, f)
+
     with open(SPXW_GAMMA_VALUES_FILE, 'rb') as f:
         spxw_gamma_values = pickle.load(f)
 
@@ -104,16 +150,23 @@ def persist_data(json_message):
         if item['service'] == 'LEVELONE_OPTIONS':
             for content in item['content']:
                 key = content.get('key')
+
                 if key and 'gamma' in content:
                     gamma_fl = float(content['gamma'])
 
                     # print(f'gamma_fl:{gamma_fl}')
 
-                    if gamma_fl >= 0.05:
+                    # if gamma_fl >= 0.05:
+                    if gamma_fl >= 0.03:
+                    # if gamma_fl >= 0.001:
 
                         if key not in spxw_gamma_values:
                             spxw_gamma_values[key] = []
+
                         spxw_gamma_values[key].append((timestamp, content['gamma']))
+
+                        with open(SPXW_GAMMA_VALUES_FILE, 'wb') as f:
+                            pickle.dump(spxw_gamma_values, f)
 
                         # print(f'gamma was recorded: {gamma_fl}')
                         
@@ -121,12 +174,34 @@ def persist_data(json_message):
                         # print(f'gamma is too low to record: {gamma_fl}')
                         pass
 
-    # Save updated data back to files
-    # with open(SPX_LAST_PRICES_FILE, 'wb') as f:
-    #     pickle.dump(spx_last_prices, f)
 
-    with open(SPXW_GAMMA_VALUES_FILE, 'wb') as f:
-        pickle.dump(spxw_gamma_values, f)
+
+
+
+
+                # if key and 'delta' and 'symbol' in content:
+                #     delta_fl = float(content['delta'])
+
+                #     delta_fl = abs(delta_fl)
+
+                #     # print(f'delta_fl:{delta_fl}')
+
+                #     if delta_fl >= 0.05:
+
+                #         if key not in spxw_delta_values:
+                #             spxw_delta_values[key] = []
+
+                #         spxw_delta_values[key].append((timestamp, content['delta']))
+
+                #         with open(SPXW_DELTA_VALUES_FILE, 'wb') as f:
+                #             pickle.dump(spxw_delta_values, f)
+
+                #         # print(f'delta was recorded: {gamma_fl}')
+                        
+                #     else:
+                #         # print(f'delta is too low to record: {gamma_fl}')
+                #         pass
+
 
 
 
@@ -139,6 +214,7 @@ def display_history():
 
     with open(SPXW_GAMMA_VALUES_FILE, 'rb') as f:
         spxw_gamma_values = pickle.load(f)
+
 
     # print("SPX Last Prices History:")
     # for timestamp, price in spx_last_prices:
@@ -405,13 +481,13 @@ def gamma_track_loop():
         # Custom infinite loop to handle MQTT client loop
         while True:
             client.loop(timeout=1.0)  # process network traffic, with a 1-second timeout
-            time.sleep(1) 
-            market_open_flag, current_eastern_time = market_open.is_market_open2(open_offset=0, close_offset=0)
+            # time.sleep(1) 
+            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset=0)
 
             # current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
             # current_eastern_day = current_eastern_time.strftime('%A')
             # print(f'gamma_track: while market is open')
-            # print(f'open flag:{market_open_flag}, current East time: {current_eastern_day} {current_eastern_hhmmss}')
+            # print(f'open flag:{market_open_flag}, current Eastern time: {current_eastern_day} {current_eastern_hhmmss}')
 
             if market_open_flag == False:
                 current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
@@ -430,7 +506,7 @@ def wait_for_market_to_open():
     print(f'gamma_track: waiting for market to open')
 
     while True:
-        market_open_flag, current_eastern_time = market_open.is_market_open2(open_offset=0, close_offset=0)
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset=0)
         if market_open_flag:
             break
 
@@ -446,23 +522,12 @@ def wait_for_market_to_open():
             # current_time = datetime.now(eastern)
             # eastern_time_str = current_time.strftime('%H:%M:%S')
 
-            print(f'gamma_track: waiting for market to open, current East time: {current_eastern_day} {current_eastern_hhmmss}')
+            print(f'gamma_track: waiting for market to open, current Eastern time: {current_eastern_day} {current_eastern_hhmmss}')
 
             pass
 
 
         time.sleep(10)
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -471,103 +536,10 @@ def main():
 
     while True:
         wait_for_market_to_open()
+        initialize_dated_destination()
         gamma_track_loop()
 
 
-
-
-    throttle_wait_display = 0
-
-
-
-
-
-
-    print(f'gamma_track: waiting for market to open')
-
-    while True:
-        market_open_flag, current_eastern_time = market_open.is_market_open2(open_offset=0, close_offset=0)
-        if market_open_flag:
-            break
-
-        throttle_wait_display += 1
-        # print(f'throttle_wait_display: {throttle_wait_display}')
-        if throttle_wait_display % 3 == 2:
-            current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
-            current_eastern_day = current_eastern_time.strftime('%A')
-
-
-
-            # eastern = pytz.timezone('US/Eastern')
-            # current_time = datetime.now(eastern)
-            # eastern_time_str = current_time.strftime('%H:%M:%S')
-
-            print(f'gamma_track: waiting for market to open, current East time: {current_eastern_day} {current_eastern_hhmmss}')
-
-            pass
-
-
-        time.sleep(10)
-
-    print(f'gamma_track: market is now open')
-
-
-    """
-    Main function to initialize MQTT client and start message processor.
-    """
-    # Initialize MQTT client
-    client = mqtt.Client()
-    client.on_connect = on_connect
-    client.on_message = on_message
-
-    try:
-        # Connect to MQTT broker
-        client.connect(MQTT_BROKER, MQTT_PORT, 60)
-
-        # Start the message processor in a separate thread
-        processor_thread = threading.Thread(target=message_processor, daemon=True)
-        processor_thread.start()
-
-        # # Start the MQTT client loop
-        # client.loop_forever()
-
-        # Custom infinite loop to handle MQTT client loop
-        while True:
-            client.loop(timeout=1.0)  # process network traffic, with a 1-second timeout
-            time.sleep(1)  # wait for 1 second
-            market_open_flag, current_eastern_time = market_open.is_market_open2(open_offset=0, close_offset=0)
-            current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
-            current_eastern_day = current_eastern_time.strftime('%A')
-            print(f'gamma_track: while market is open')
-            print(f'open flag:{market_open_flag}, current East time: {current_eastern_day} {current_eastern_hhmmss}')
-
-            if market_open_flag == False:
-                print("Market is closed, shutting down MQTT...")
-                client.loop_stop()  # Stop the MQTT loop
-                client.disconnect()  # Disconnect from the MQTT broker
-                break
-
-
-        
-
-        
-
-        # while True:
-        #     print(f'gamma_track checking to see if market is no longer open')
-        #     if not is_market_open():
-        #         print("Market is closed, shutting down MQTT...")
-        #         client.loop_stop()  # Stop the MQTT loop
-        #         client.disconnect()  # Disconnect from the MQTT broker
-        #         break
-        #     time.sleep(10)  # Check the market status every 60 seconds
-
-
-
-
-
-        
-    except Exception as e:
-        print(f"Error in MQTT connection: {e}")
 
 if __name__ == "__main__":
     main()
