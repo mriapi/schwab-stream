@@ -7,14 +7,14 @@ from dotenv import load_dotenv
 import schwabdev
 import pandas as pd
 from datetime import datetime, timezone, timedelta
+import pytz
+from tzlocal import get_localzone  # To get the local timezone
 import warnings
 import json
-import pytz
 # import spread_picker_B
 import recommender
 from tabulate import tabulate
 import calendar
-import pytz
 import random
 import market_open
 import order
@@ -22,11 +22,119 @@ import math
 import positions
 
 
-real_trading_flag = True
+
 
 # Define the list of entry times in EASTERN TIME, in 24-hour clock format
 # entry_times = ["13:00", "13:30", "14:00", "14:30", "14:45"]
-entry_times = ["13:48", "14:15"]
+# entry_times = ["10:43", "12:58", "13:28", "13:58", "14:28"]
+# entry_times = ["15:07"]
+
+# #               10:00    10:30    10:45    11:15    11:30    11:45
+# entry_times = ["12:58", "13:28", "13:43", "14:13", "14:28", "14:43"]
+
+# #               6:45    10:00    10:30    11:15    11:30    11:45
+# entry_times = ["9:45", "12:58", "13:30", "14:15", "14:30", "15:21"]
+
+
+# #               6:45    07:00    07:15    07:30    07:45    08:00    08:15    08:30    08:45    09:00
+# entry_times = ["9:45", "10:00", "10:15", "10:30", "10:45", "11:00", "11:15", "11:30", "11:45", "12:00"]
+
+# #               6:50
+# entry_times = ["10:52"]
+
+#                8:58    09:58    10:28    10:58    11:14    11:29
+entry_times = ["11:58", "12:58", "13:28", "13:58", "14:14", "14:29"]
+
+real_trading_flag = True
+
+
+
+
+
+# def show_times(entry_times):
+#     print("Eastern times")
+#     times_as_str = [time.strftime("%H:%M") for time in entry_times]
+#     print(", ".join(times_as_str))
+
+
+# def show_times(entry_times):
+#     print("Eastern times")
+#     times_as_str = [time.strftime("%H:%M") for time in entry_times]
+#     print(", ".join(times_as_str))
+
+#     times_as_12_hour = [datetime.strptime(t, "%H:%M").strftime("%I:%M %p") for t in times_as_str]
+#     print(", ".join(times_as_12_hour))
+
+
+
+def show_times(entry_times):
+    print("\nEastern times")
+    times_as_str = [time.strftime("%H:%M") for time in entry_times]
+    print(",    ".join(times_as_str))
+
+    times_as_12_hour = [datetime.strptime(t, "%H:%M").strftime("%I:%M %p") for t in times_as_str]
+    print(", ".join(times_as_12_hour))
+
+    print("\nPacific Times")
+    pacific_times = [(datetime.strptime(t, "%H:%M") - timedelta(hours=3)).strftime("%I:%M %p") for t in times_as_str]
+    print(", ".join(pacific_times))
+    print()
+
+
+
+
+
+
+
+
+
+
+
+def get_meic_dated_desination_dir():
+    base_dir = r"C:\MEIC\tranche"
+
+    # Get the current date in yymmdd format
+    current_date = datetime.now().strftime('%y%m%d')
+
+    # Create the full directory path
+    full_dir = os.path.join(base_dir, f"data_{current_date}")
+
+    # Create the directory if it does not already exist
+    os.makedirs(full_dir, exist_ok=True)
+
+    return full_dir
+
+
+
+
+def post_tranche_data(new_post):
+    """
+    Append the new_post string to a file named tranche_info.txt in the specified directory.
+    
+    :param directory_path: The path to the directory where the file is located.
+    :param new_post: The string to be appended to the file.
+    """
+
+    tranche_post_dated_dir = get_meic_dated_desination_dir()
+    file_path = os.path.join(tranche_post_dated_dir, "tranche_info.txt")
+    
+    # Ensure the directory exists
+    os.makedirs(tranche_post_dated_dir, exist_ok=True)
+    
+    # Open the file in append mode (create if it does not exist)
+    with open(file_path, 'a') as file:
+        file.write(new_post + "\n")
+    
+    # print(f'Appended new post to file: {file_path}')
+
+
+
+# post_test_str = r'my tranche test string 1'
+# post_tranche_data(post_test_str)
+# post_test_str = r'my tranche test string 2'
+# post_tranche_data(post_test_str)
+
+
 
 
 
@@ -368,6 +476,19 @@ def display_spread(label_str, spread_list):
     persist_string(disp_str)
 
 
+def display_syms_only(option_list):
+    try:
+        for option in option_list:
+            print(f"Symbol: {option['symbol']}")
+
+    except KeyError as e:
+        print(f"KeyError: Missing key {e}. Exiting display_syms_only().")
+        return
+    except Exception as e:
+        print(f"An error occurred: {e}. Exiting display_syms_only().")
+        return
+
+
 
 
 # Thread function to process messages from the queue
@@ -434,18 +555,136 @@ def process_message(schwab_client):
                 put_short,
                 put_long,
                 spx_price,
-                atm_straddle) = recommender.generate_recommendation(gbl_short_positions, gbl_long_positions,payload_dict)
+                atm_straddle,
+                target_credit) = recommender.generate_recommendation(gbl_short_positions, gbl_long_positions,payload_dict)
             
+
+            # ensue that we have all four recommendations
+            cs_len = len(call_short)
+            cl_len = len(call_long)
+            ps_len = len(put_short)
+            pl_len = len(put_long)
+
+            # if we are missing one or more of the four recommendations
+            if cs_len == 0 or cl_len == 0 or ps_len == 0 or pl_len == 0:
+                print(f'MEIC: at least one of the spread options could not be recommended')
+                if cs_len == 0:
+                    print(f'call short was not selected')
+                if cl_len == 0:
+                    print(f'call long was not selected')
+                if ps_len == 0:
+                    print(f'put short was not selected')
+                if pl_len == 0:
+                    print(f'put long was not selected')
+
+                time.sleep(0.1)
+                continue
+
+
+            # print(f'call short:{call_short}')
+            # print(f'call long:{call_long}')
+            # print(f'put short:{put_short}')
+            # print(f'put long:{put_long}')
+            # print(f'target credit:{target_credit}')
+
+                
 
             call_spread = spread_data(call_short, call_long, spx_price)
             put_spread = spread_data(put_short, put_long, spx_price)
 
 
-            
+            # ensure that the final net credit is not too low
+            MIN_NET = 0.90
+
+            call_net = 0.00
+            put_net = 0.00
+
+
+            if 'net' in call_spread:
+                net_value = call_spread.get('net')
+                
+                net_fl = float(net_value)
+                call_net = net_fl
+                # print(f'call_spread call_net:{call_net}')
+
+            if 'net' in put_spread:
+                net_value = put_spread.get('net')
+                # print(f'put_spread net:{net_value}')
+                net_fl = float(net_value)
+                put_net = net_fl
+                # print(f'put_spread put_net:{put_net}')
+
+            if call_net < MIN_NET:
+                print(f'call_net too low:{call_net}')
+                print(f'gbl_short_positions:\n{gbl_short_positions}')
+                print(f'gbl_long_positions:\n{gbl_long_positions}')
+                (r_last_call_list, 
+                 r_last_call_short_list, 
+                 r_last_call_long_list, 
+                 r_last_put_list, 
+                 r_last_put_short_list, 
+                 r_last_put_long_list) = recommender.get_last_short_long_lists()
+                
+                # print(f'selected call short:\n{call_short}')
+                print(f'selected call_short:')
+                display_syms_only(call_short)
+
+                # print(f'selected call long:\n{call_long}')
+                print(f'selected call_long:')
+                display_syms_only(call_long)
+
+
+                # print(f'last_call_list:\n{r_last_call_list}')
+                print(f'r_last_call_list:')
+                display_syms_only(r_last_call_list)
+
+
+                # print(f'last_call_short_list:\n{r_last_call_short_list}')
+                print(f'r_last_call_short_list:')
+                display_syms_only(r_last_call_short_list)
+
+
+                # print(f'last_call_long_list:\n{r_last_call_long_list}')
+                print(f'r_last_call_long_list:')
+                display_syms_only(r_last_call_long_list)
 
 
 
-            if 'net' in call_spread and 'net' in put_spread:
+            if put_net < MIN_NET:
+                print(f'put_net too low:{put_net}')
+                print(f'gbl_short_positions:\n{gbl_short_positions}')
+                print(f'gbl_long_positions:\n{gbl_long_positions}')
+                (r_last_call_list, 
+                 r_last_call_short_list, 
+                 r_last_call_long_list, 
+                 r_last_put_list, 
+                 r_last_put_short_list, 
+                 r_last_put_long_list) = recommender.get_last_short_long_lists()
+                
+                # print(f'selected put short:\n{put_short}')
+                print(f'selected put short:')
+                display_syms_only(put_short)
+
+                # print(f'selected put long:\n{put_long}')
+                print(f'selected put long:')
+                display_syms_only(put_long)
+
+                # print(f'r_last_put_list:\n{r_last_put_list}')
+                print(f'r_last_put_list:')
+                display_syms_only(r_last_put_list)
+
+                # print(f'r_last_put_short_list:\n{r_last_put_short_list}')
+                print(f'r_last_put_short_list:')
+                display_syms_only(r_last_put_short_list)
+
+
+                # print(f'r_last_put_long_list:\n{r_last_put_long_list}')
+                print(f'r_last_put_long_list:')
+                display_syms_only(r_last_put_long_list)
+
+
+
+            if 'net' in call_spread and 'net' in put_spread and call_net >= MIN_NET and put_net >= MIN_NET:
 
 
                 current_time_local = datetime.now()  # Get the current datetime object for comparison
@@ -454,10 +693,6 @@ def process_message(schwab_client):
 
                 current_time = datetime.now(eastern)
                 current_time_str = current_time.strftime('%H:%M:%S')
-
-
-                print(f'checking entry_times at {current_time_str} (Eastern)')
-
 
                 print(f'Checking entry_times at {current_time_str} (Eastern)')
 
@@ -469,9 +704,31 @@ def process_message(schwab_client):
                     if entry_time_today <= current_time and entry_time not in processed_times:
                         # Check if it's within 5 minutes of the crossed time
                         if (current_time - entry_time_today).total_seconds() <= 300:
-                            print(f'PLACING ORDER!!! at {current_time_str} (Eastern)')
-                            order.enter_spread_with_triggers(real_trading_flag, schwab_client, my_hash, "CALL", call_short, call_long, qty=1)
-                            order.enter_spread_with_triggers(real_trading_flag, schwab_client, my_hash, "PUT", put_short, put_long, qty=1)
+                            info_str = f'PLACING ORDER!!! at {current_time_str} (Eastern), spx:{spx_price}, atm straddle:{atm_straddle}, target credit:{target_credit} real trading?:{real_trading_flag}'
+                            print(info_str)
+                            post_tranche_data(info_str)
+
+                            call_order_form, call_order_id, call_order_details = \
+                                order.enter_spread_with_triggers(real_trading_flag, schwab_client, my_hash, "CALL", call_short, call_long, qty=1)
+                            
+                            put_order_form, put_order_id, put_order_details = \
+                                order.enter_spread_with_triggers(real_trading_flag, schwab_client, my_hash, "PUT", put_short, put_long, qty=1)
+                        
+                            # print()
+                            # print(f'call_order_form type:{type(call_order_form)}, data:{call_order_form}')
+                            # print(f'call_order_id type:{type(call_order_id)}, value:{call_order_id}')
+                            # print(f'call_order_details type:{type(call_order_details)}, value:{call_order_details}')
+
+                            # print()
+                            # print(f'put_order_form type:{type(put_order_form)}, data:{put_order_form}')
+                            # print(f'put_order_id type:{type(put_order_id)}, value:{put_order_id}')
+                            # print(f'put_order_details type:{type(put_order_details)}, value:{put_order_details}')
+
+                            # print()
+
+
+
+
                         else:
                             print(f"Skipped task for entry time {entry_time} (more than 5 minutes late)")
 
@@ -480,6 +737,32 @@ def process_message(schwab_client):
 
 
                 pass
+
+            else:
+                info_str = f'Did not place the order'
+                print(info_str)
+                post_tranche_data(info_str)
+
+                if 'net' not in call_spread:
+                    info_str = f'net not in call_spread:'
+                    print(info_str)
+                    post_tranche_data(info_str)
+
+                if 'net' not in put_spread:
+                    info_str = f'net not in put_spread:'
+                    print(info_str)
+                    post_tranche_data(info_str)
+                    
+                if call_net >= MIN_NET:
+                    info_str = f'call_net to small:{call_net}'
+                    print(info_str)
+                    post_tranche_data(info_str)
+                    
+                if put_net >= MIN_NET:
+                    info_str = f'put_net to small:{call_net}'
+                    print(info_str)
+                    post_tranche_data(info_str)
+
 
 
             atm_string = f'SPX:{spx_price:.2f}, ATM straddle:{atm_straddle:.2f}'
@@ -830,6 +1113,9 @@ def meic_loop():
 
 # Main function to set up MQTT client and start the processing thread
 def main():
+
+    print(f'\nScheduled Entry Times:')
+    show_times(entry_times)
 
     while True:
         wait_for_market_to_open()

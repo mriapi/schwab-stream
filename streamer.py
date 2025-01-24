@@ -230,14 +230,14 @@ def streamer_thread(client):
         gbl_system_error_flag = True
         return
     
-    # subscribe to account activity
-    try:
-        strm_client.send(strm_client.account_activity("Account Activity", "0,1,2,3"))
+    # # subscribe to account activity
+    # try:
+    #     strm_client.send(strm_client.account_activity("Account Activity", "0,1,2,3"))
 
-    except Exception as e:
-        print(f"108SAA strm_client.send(strm_client.account_activity): An error occurred: {e}")
-        gbl_system_error_flag = True
-        return
+    # except Exception as e:
+    #     print(f"108SAA strm_client.send(strm_client.account_activity): An error occurred: {e}")
+    #     gbl_system_error_flag = True
+    #     return
     
     
 
@@ -411,6 +411,9 @@ def translate_quote_key_names(json_message):
                         content['ask ID'] = content.pop('7')  
                     if '8' in content:
                         content['total volume'] = content.pop('8')  
+
+        else:
+            pass
 
 
 
@@ -789,9 +792,9 @@ def message_processor():
             # else the message was something other than a quote or one of the other messages trapped above
 
             else:
-                print(f'unsupported message')
+                # print(f'unsupported message')
                 pretty_json = json.dumps(json_message, indent=2)
-                print(f'unsupported message:\n{pretty_json}')
+                print(f'unsupported and unpublished message:\n{pretty_json}\n')
                 pass
                 
 

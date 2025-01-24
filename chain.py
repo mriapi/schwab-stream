@@ -17,6 +17,7 @@ import calendar
 import pytz
 import market_open
 import recommend_config
+import positions
 
 quote_df_lock = threading.Lock()
 
@@ -1041,13 +1042,16 @@ def meic_entry(schwab_client):
                 short_positions = []
                 long_positions = []
 
+                get_positions_success_flag, gbl_short_positions, gbl_long_positions = positions.get_positions2()
+
 
                 (call_short,
                     call_long,
                     put_short,
                     put_long,
                     spx_price_picker,
-                    atm_straddle) = recommender.generate_recommendation(short_positions, long_positions, quote_sorted_json)
+                    atm_straddle,
+                    target_credit) = recommender.generate_recommendation(short_positions, long_positions, quote_sorted_json)
                 
                 # print(f'call_short type:{type(call_short)}, data\n{call_short}')
                 # print(f'call_long type:{type(call_long)}, data\n{call_long}')
@@ -1060,15 +1064,29 @@ def meic_entry(schwab_client):
                 pl_len = len(put_long)
 
                 if cs_len == 0 or cl_len == 0 or ps_len == 0 or pl_len == 0:
-                    print(f'at least one of the spread options could not be recommended')
+                    info_string = f'at least one of the spread options could not be recommended'
+                    print(info_string)
+                    persist_string(info_string)
+
                     if cs_len == 0:
-                        print(f'call short was not selected')
+                        info_string = f'call short was not selected'
+                        print(info_string)
+                        persist_string(info_string)
+
                     if cl_len == 0:
-                        print(f'call long was not selected')
+                        info_string = f'call long was not selected'
+                        print(info_string)
+                        persist_string(info_string)
+
                     if ps_len == 0:
-                        print(f'put short was not selected')
+                        info_string = f'put short was not selected'
+                        print(info_string)
+                        persist_string(info_string)
+
                     if pl_len == 0:
-                        print(f'put long was not selected')
+                        info_string = f'put long was not selected'
+                        print(info_string)
+                        persist_string(info_string)
 
                 else:
                     call_spread = spread_data(call_short, call_long, spx_price_picker)
@@ -1078,7 +1096,8 @@ def meic_entry(schwab_client):
                     # persist_string(f'\n{file_path}:')
                     persist_string(f'Spread recommendations at {current_hhmmss}')
 
-                    info_string = f'SPX:{spx_price_picker:.2f}, ATM straddle:{atm_straddle:.2f}, MAX TARGET:{recommend_config.MAX_SHORT_TARGET}, MIN TARGET:{recommend_config.MIN_SHORT_TARGET}'
+
+                    info_string = f'SPX:{spx_price_picker:.2f}, ATM straddle:{atm_straddle:.2f}, credit target:{target_credit}'
                     print(info_string)
                     persist_string(info_string)
 
@@ -1089,6 +1108,25 @@ def meic_entry(schwab_client):
                     display_syms(put_short, put_long)
 
                     print()
+
+
+                    if len(gbl_short_positions) > 0 or len(gbl_long_positions) > 0:
+                        # cl, csl, cll, pl, psl, pll = recommender.get_last_short_long_lists()
+                        # print(f'adjusted call/put candidates based on existing short/long positions')
+                        # print(f'exisiting short positions:\n{gbl_short_positions}')
+                        # print(f'exisiting long positions:\n{gbl_long_positions}')
+                        # print(f'call list:\n{cl}')
+                        # print(f'adjusted call short list:\n{csl}')
+                        # print(f'adjusted call long list:\n{cll}')
+                        # print(f'put list:\n{pl}')
+                        # print(f'adjusted put short list:\n{psl}')
+                        # print(f'adjusted put long list:\n{pll}')
+                        pass
+
+                    print
+
+
+
 
             else:
                 print(f'waiting for enough rows ({ROW_NEEDED}), current:{total_rows}')
@@ -1292,7 +1330,11 @@ def main():
 
     test_destination = get_chain_desination_dir()
 
-    print(f'chain test_destination:{test_destination}')
+    print(f'chain test_destination directory:{test_destination}')
+
+    info_string = f'MAX TARGET:{recommend_config.MAX_SHORT_TARGET}, MIN TARGET:{recommend_config.MIN_SHORT_TARGET}, EM_MAX:{recommend_config.EM_MAX}, EM_MIN{recommend_config.EM_MIN}'
+    print(info_string)
+    persist_string(info_string)
 
     while True:
         wait_for_market_to_open()
