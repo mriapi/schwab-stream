@@ -1,5 +1,6 @@
 import json
 import schwabdev
+import meic
 
 
 
@@ -13,37 +14,63 @@ def enter_spread_with_triggers(real_flag, client, hash, opt_type, short_leg, lon
         long_sym = long_leg[0]['symbol']
         long_ask = long_leg[0]['ask']
 
+        order_form = None
+        order_id = None
+        order_details = None
+
         order_form = generate_order_STO_spread_with_triggers(short_sym, short_bid, long_sym, long_ask, qty)
 
         # print(f'order_form type:{type(order_form)}')
         # print(f'order_form data:{json.dumps(order_form, indent=4)}')
 
 
+
+
         if real_flag == True:
+            info_str = f'Real trading mode is True.  Order WILL be placed'
+            print(info_str)
+            meic.post_tranche_data(info_str)
 
             resp = client.order_place(hash, order_form)
-            print("\nPlaced order:")
-            print(f"Response code: {resp}")
+            info_str = "\nPlaced order:"
+            print(info_str)
+            meic.post_tranche_data(info_str)
+
+            info_str = f"Response code: {resp}"
+            print(info_str)
+            meic.post_tranche_data(info_str)
+
 
             # Print all response headers
             print("\nall Response header items:")
+
             for header, value in resp.headers.items():
                 print(f"{header}: {value}")
 
             print()
 
+            info_str = f" "
+            print(info_str)
+            meic.post_tranche_data(info_str)
             
 
             # get the order ID - if order is immediately filled then the id might not be returned
             order_id = resp.headers.get('location', '/').split('/')[-1]
-            print(f"Order id: {order_id}")
 
-            print("\nGet specific order details")
+            info_str = f"Order id: {order_id}"
+            print(info_str)
+            meic.post_tranche_data(info_str)
+
+            print(f'\nGet specific {opt_type} spread order details')
             print(client.order_details(hash, order_id).json())
             order_details = client.order_details(hash, order_id).json()
 
         else:
-            print(f'Paper trading mode.  Order not placed')
+            info_str = f'Read trading mode is False.  Order NOT placed'
+            print(info_str)
+            meic.post_tranche_data(info_str)
+
+            return order_form, order_id, order_details
 
 
 
@@ -52,6 +79,8 @@ def enter_spread_with_triggers(real_flag, client, hash, opt_type, short_leg, lon
     except Exception as e:
         print(f"Error in enter_spread_with_triggers(): {e}, no order was placed")
         return
+    
+    return order_form, order_id, order_details
     
 
     
@@ -62,15 +91,11 @@ def generate_order_STO_spread_with_triggers(short_sym, short_bid, long_sym, long
     price = short_bid - long_ask
     original_price = price
 
+    price -= 0.10
 
-    price -= 0.05
+    stop_price = price * 2 + (long_ask * 1.2)
 
 
-    stop_price = price * 2 + long_ask
-
-    print(f'\ngenerate_order {short_sym}/{long_sym}')
-    print(f'short_bid:{short_bid:.2f}, long_ask:{long_ask:.2f}')
-    print(f'original_price limit:{original_price}, adjusted price limit:{price}, stop_price:{stop_price:.2f}')
 
   
 
@@ -79,6 +104,16 @@ def generate_order_STO_spread_with_triggers(short_sym, short_bid, long_sym, long
         stop_price = round(stop_price * 10) / 10  # Round to nearest 0.10
     else:
         stop_price = round(stop_price * 20) / 20  # Round to nearest 0.05
+
+    info_str = f'\ngenerate_order {short_sym}/{long_sym}'
+    print(info_str)
+    meic.post_tranche_data(info_str)
+    info_str = f'short_bid:{short_bid:.2f}, long_ask:{long_ask:.2f}'
+    print(info_str)
+    meic.post_tranche_data(info_str)
+    info_str = f'original_price limit:{original_price:.2f}, adjusted price limit:{price:.2f}, stop_price:{stop_price:.2f}'
+    print(info_str)
+    meic.post_tranche_data(info_str)
 
     
     # Create the JSON order
@@ -144,6 +179,40 @@ def generate_order_STO_spread_with_triggers(short_sym, short_bid, long_sym, long
             }
         ]
     }
+
+
+
+    if "C0" in short_sym:
+        opt_type_str = "CALL"
+    elif  "P0" in short_sym:
+        opt_type_str = "PUT"
+    else:
+        opt_type_str = "UNKNOWN"
+
+    
+
+    stopOnStr = "SHORT"
+    # stopOnStr = "SPREAD"
+
+    auto_sell_long_string = "TRUE"
+    # auto_sell_long_string = "FALSE"
+
+
+    
+
+    # json_summary = {
+    #     "orderType": "VERTICAL_SPREAD",
+    #     "optType" : opt_type_str,
+    #     "shortSym" : short_sym,
+    #     "shortBid" : f"{short_bid:.2f}",
+    #     "longSym" : long_sym,
+    #     "shortBid" : f"{long_ask:.2f}",
+    #     "spreadLimit" : f"{price:.2f}",
+    #     "stopOn" : stopOnStr,
+    #     "stopPrice" : f"{stop_price:.2f}",
+    #     "auotSellLong" : auto_sell_long_string
+    # }
+
 
     # Convert to JSON string and print
     # json_order_str = json.dumps(json_order, indent=4)

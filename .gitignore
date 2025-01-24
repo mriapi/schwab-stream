@@ -8,7 +8,8 @@
 **/*.csv
 
 # test programs
-test*.py
+test*.*
+util*.*
 
 
 __pycache__/

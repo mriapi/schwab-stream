@@ -25,6 +25,9 @@ gbl_total_message_count = 0
 
 market_open_flag = False
 
+global time_since_last_stream
+global time_since_last_queried
+
 
 
 def load_env_variables():
@@ -491,6 +494,8 @@ def process_message():
     global spx_last_fl
     global gbl_total_message_count
     global market_open_flag
+    global time_since_last_stream
+    global time_since_last_quereied
 
     MARKET_OPEN_OFFSET = 0
     MARKET_CLOSE_OFFSET = 0
@@ -553,9 +558,12 @@ def process_message():
 
         if "schwab/stream" in topic:
             process_stream(topic, payload_dict)
+            time_since_last_stream = 0
+
 
         elif "schwab/queried" in topic:
             process_queried(topic, payload_dict)
+            time_since_last_quereied = 0
 
         elif "schwab/spx/grid/request" in topic:
             # print(f'grid request topic type:{type(topic)}, topic:<{topic}>')
@@ -573,7 +581,13 @@ def process_message():
             # Count the number of rows with NaN or None values in 'bid' or 'ask'
             rows_with_nan_bid_ask = quote_df_sorted[['bid', 'ask']].isna().any(axis=1).sum()
 
-            publish_grid(quote_df_sorted, rows_with_nan_bid_ask, request_id)
+            if time_since_last_quereied < 30 and time_since_last_stream < 30:
+                publish_grid(quote_df_sorted, rows_with_nan_bid_ask, request_id)
+
+            else:
+                print(f'grid refused to publish -- too much time since last data')
+                print(f'time_since_last_quereied:{time_since_last_quereied},  time_since_last_stream:{time_since_last_stream}')
+
 
             pass
 
@@ -632,14 +646,32 @@ def publish_grid(quote_df_sorted, rows_with_nan_bid_ask, request_id):
 
 def meic_entry(schwab_client):
     global quote_df
+    global time_since_last_stream
+    global time_since_last_quereied
+
+
+
     no_none_nan_flag = False    # indicates when all bid and ask have values
 
     display_quote_throttle = 0
     total_reported_rows = 0
 
+    total_loop_count = 0
+    time_since_last_stream = 0
+    time_since_last_quereied = 0
+
     while True:
         time.sleep(1)
         display_quote_throttle += 1
+
+        total_loop_count += 1
+        time_since_last_stream += 1
+        time_since_last_quereied += 1
+
+        if time_since_last_quereied > 10 or time_since_last_stream > 10:
+                print(f'grid: total loop:{total_loop_count}, since stream:{time_since_last_stream}, since queried:{time_since_last_quereied}')
+
+
 
         # print(f'display_quote_throttle:{display_quote_throttle}')
         # print('meic_entry loop')

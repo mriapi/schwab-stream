@@ -179,7 +179,7 @@ def get_positions(account_details):
 
         else:
             # Handle the case where 'positions' key is not present
-            print("No positions in account data, resetting positions table")
+            print("100 No positions in account data, resetting positions table")
             reset_positions()
             return
 
@@ -262,7 +262,7 @@ def get_positions2():
 
         else:
             # Handle the case where 'positions' key is not present
-            print("No positions in account data, resetting positions table")
+            print("200 No positions in account data, resetting positions table")
             reset_positions()
             return get_positions_success_flag, short_positions, long_positions
 
