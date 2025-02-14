@@ -39,16 +39,14 @@ import positions
 # #               6:45    07:00    07:15    07:30    07:45    08:00    08:15    08:30    08:45    09:00
 # entry_times = ["9:45", "10:00", "10:15", "10:30", "10:45", "11:00", "11:15", "11:30", "11:45", "12:00"]
 
-# #               6:50
-# entry_times = ["10:52"]
+# #               12:15
+# entry_times = ["15:14"]
 
-#                8:58    09:58    10:28    10:58    11:14    11:29
-entry_times = ["11:58", "12:58", "13:28", "13:58", "14:14", "14:29"]
+#               09:45    10:00    10:30    11:00    11:15    11:30
+entry_times = ["12:45", "13:00", "13:30", "14:00", "14:15", "14:30"]
+
 
 real_trading_flag = True
-
-
-
 
 
 # def show_times(entry_times):
@@ -544,9 +542,27 @@ def process_message(schwab_client):
             elapsed_milliseconds = int(elapsed_time.total_seconds() * 1000)
 
             # Print the elapsed time in milliseconds
-            display_str = f'\nmeic: tranche grid request at {current_time} Pacific Time.  Elapsed grid request/response time: {elapsed_milliseconds} mS'
+            display_str = f'meic: tranche grid data received at {current_time} Pacific Time.  Elapsed grid request/response time: {elapsed_milliseconds} mS'
             print(display_str)
             persist_string(display_str)
+
+            if not gbl_short_positions:
+                info_str = f'No existing short positions'
+            else:
+                info_str = f'\nexisting short positions: {gbl_short_positions}'
+
+            print(info_str)
+            persist_string(display_str)
+
+            if not gbl_long_positions:
+                info_str = f'No existing long positions'
+            else:
+                info_str = f'\nexisting long positions: {gbl_long_positions}\n'
+
+            print(info_str)
+            persist_string(display_str)
+
+
 
             # print(f'grid responose topic:<{topic}>, payload_dict type{type(payload_dict)}, data:\n{payload_dict}')
             
@@ -564,6 +580,7 @@ def process_message(schwab_client):
             cl_len = len(call_long)
             ps_len = len(put_short)
             pl_len = len(put_long)
+
 
             # if we are missing one or more of the four recommendations
             if cs_len == 0 or cl_len == 0 or ps_len == 0 or pl_len == 0:
@@ -618,35 +635,37 @@ def process_message(schwab_client):
                 print(f'call_net too low:{call_net}')
                 print(f'gbl_short_positions:\n{gbl_short_positions}')
                 print(f'gbl_long_positions:\n{gbl_long_positions}')
-                (r_last_call_list, 
-                 r_last_call_short_list, 
-                 r_last_call_long_list, 
-                 r_last_put_list, 
-                 r_last_put_short_list, 
-                 r_last_put_long_list) = recommender.get_last_short_long_lists()
+
                 
-                # print(f'selected call short:\n{call_short}')
-                print(f'selected call_short:')
-                display_syms_only(call_short)
+                # (r_last_call_list, 
+                #  r_last_call_short_list, 
+                #  r_last_call_long_list, 
+                #  r_last_put_list, 
+                #  r_last_put_short_list, 
+                #  r_last_put_long_list) = recommender.get_last_short_long_lists()
+                
+                # # print(f'selected call short:\n{call_short}')
+                # print(f'selected call_short:')
+                # display_syms_only(call_short)
 
-                # print(f'selected call long:\n{call_long}')
-                print(f'selected call_long:')
-                display_syms_only(call_long)
-
-
-                # print(f'last_call_list:\n{r_last_call_list}')
-                print(f'r_last_call_list:')
-                display_syms_only(r_last_call_list)
-
-
-                # print(f'last_call_short_list:\n{r_last_call_short_list}')
-                print(f'r_last_call_short_list:')
-                display_syms_only(r_last_call_short_list)
+                # # print(f'selected call long:\n{call_long}')
+                # print(f'selected call_long:')
+                # display_syms_only(call_long)
 
 
-                # print(f'last_call_long_list:\n{r_last_call_long_list}')
-                print(f'r_last_call_long_list:')
-                display_syms_only(r_last_call_long_list)
+                # # print(f'last_call_list:\n{r_last_call_list}')
+                # print(f'r_last_call_list:')
+                # display_syms_only(r_last_call_list)
+
+
+                # # print(f'last_call_short_list:\n{r_last_call_short_list}')
+                # print(f'r_last_call_short_list:')
+                # display_syms_only(r_last_call_short_list)
+
+
+                # # print(f'last_call_long_list:\n{r_last_call_long_list}')
+                # print(f'r_last_call_long_list:')
+                # display_syms_only(r_last_call_long_list)
 
 
 
@@ -654,33 +673,34 @@ def process_message(schwab_client):
                 print(f'put_net too low:{put_net}')
                 print(f'gbl_short_positions:\n{gbl_short_positions}')
                 print(f'gbl_long_positions:\n{gbl_long_positions}')
-                (r_last_call_list, 
-                 r_last_call_short_list, 
-                 r_last_call_long_list, 
-                 r_last_put_list, 
-                 r_last_put_short_list, 
-                 r_last_put_long_list) = recommender.get_last_short_long_lists()
+
+                # (r_last_call_list, 
+                #  r_last_call_short_list, 
+                #  r_last_call_long_list, 
+                #  r_last_put_list, 
+                #  r_last_put_short_list, 
+                #  r_last_put_long_list) = recommender.get_last_short_long_lists()
                 
-                # print(f'selected put short:\n{put_short}')
-                print(f'selected put short:')
-                display_syms_only(put_short)
+                # # print(f'selected put short:\n{put_short}')
+                # print(f'selected put short:')
+                # display_syms_only(put_short)
 
-                # print(f'selected put long:\n{put_long}')
-                print(f'selected put long:')
-                display_syms_only(put_long)
+                # # print(f'selected put long:\n{put_long}')
+                # print(f'selected put long:')
+                # display_syms_only(put_long)
 
-                # print(f'r_last_put_list:\n{r_last_put_list}')
-                print(f'r_last_put_list:')
-                display_syms_only(r_last_put_list)
+                # # print(f'r_last_put_list:\n{r_last_put_list}')
+                # print(f'r_last_put_list:')
+                # display_syms_only(r_last_put_list)
 
-                # print(f'r_last_put_short_list:\n{r_last_put_short_list}')
-                print(f'r_last_put_short_list:')
-                display_syms_only(r_last_put_short_list)
+                # # print(f'r_last_put_short_list:\n{r_last_put_short_list}')
+                # print(f'r_last_put_short_list:')
+                # display_syms_only(r_last_put_short_list)
 
 
-                # print(f'r_last_put_long_list:\n{r_last_put_long_list}')
-                print(f'r_last_put_long_list:')
-                display_syms_only(r_last_put_long_list)
+                # # print(f'r_last_put_long_list:\n{r_last_put_long_list}')
+                # print(f'r_last_put_long_list:')
+                # display_syms_only(r_last_put_long_list)
 
 
 
@@ -696,15 +716,39 @@ def process_message(schwab_client):
 
                 print(f'Checking entry_times at {current_time_str} (Eastern)')
 
+                new_entry_match_flag = False
+                placed_order_flag = False
+
                 for entry_time in entry_times:
+                    
                     # Convert entry_time to today's datetime in Eastern Time
                     entry_time_today = eastern.localize(datetime.combine(current_time.date(), entry_time))
 
                     # Check if the time is crossed but not processed
                     if entry_time_today <= current_time and entry_time not in processed_times:
+
+                        print(f'{current_time_str} matches an entry time')
+                        new_entry_match_flag = True
+                        
+
                         # Check if it's within 5 minutes of the crossed time
                         if (current_time - entry_time_today).total_seconds() <= 300:
-                            info_str = f'PLACING ORDER!!! at {current_time_str} (Eastern), spx:{spx_price}, atm straddle:{atm_straddle}, target credit:{target_credit} real trading?:{real_trading_flag}'
+                            placed_order_flag = True
+
+                            if real_trading_flag == True:
+                                live_str = "LIVE LIVE LIVE LIVE"
+
+                            else:
+                                live_str = "PAPER PAPER PAPER"
+
+
+                            try:
+                                target_credit_fl = float(target_credit)
+
+                            except Exception as e:
+                                target_credit_fl = 0.00
+
+                            info_str = f'\n\n     !PLACING {live_str} ORDER! at {current_time_str} (Eastern), spx:{spx_price}\n  atm straddle:{atm_straddle}, target credit:{target_credit_fl:.2f} real trading?:{real_trading_flag}\n\n'
                             print(info_str)
                             post_tranche_data(info_str)
 
@@ -734,6 +778,12 @@ def process_message(schwab_client):
 
                         # Mark the time as processed
                         processed_times.add(entry_time)
+
+                if new_entry_match_flag:
+                    print(f'{entry_time} ({current_time_local_str} Pacific) IS a new entry time')
+
+                else:
+                    print(f'{entry_time} ({current_time_local_str} Pacific) is not a new entry time')
 
 
                 pass
@@ -892,15 +942,24 @@ def meic_entry(schwab_client):
             get_positions_success_flag, gbl_short_positions, gbl_long_positions = positions.get_positions2()
 
             # print(f'get_positions2():\nsuccess flag:{get_positions_success_flag}')
-            
-            print(f'\nexisting short positions:\n{gbl_short_positions}\n')
-            print(f'existing long positions:\n{gbl_long_positions}\n')
+
+
+            # if not gbl_short_positions:
+            #     print(f'No existing short positions')
+            # else:
+            #     print(f'\nexisting short positions: {gbl_short_positions}')
+
+            # if not gbl_long_positions:
+            #     print(f'No existing long positions')
+            # else:
+            #     print(f'\nexisting long positions: {gbl_long_positions}\n')
+
 
 
             seconds_to_next_minute = market_open.seconds_until_even_minute() + 3
             seconds_to_minute_int = math.floor(seconds_to_next_minute)
         
-            # print(f'in meic_entry, caling publish_grid_request()')
+            print(f'\n=============================\nRequesting SPX grid data')
             publish_grid_request()
             pass
 
@@ -957,10 +1016,10 @@ def is_market_open():
 
 def wait_for_market_to_open():
     throttle_wait_display = 0
-    print(f'meic: waiting for market to open')
+    print(f'meic: waiting for market to open 2')
 
     while True:
-        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset=0)
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=2, close_offset=0)
         if market_open_flag:
             break
 
@@ -997,7 +1056,7 @@ def meic_loop():
 
         throttle_wait_display = 0
 
-        print(f'meic: waiting for market to open')
+        print(f'meic: waiting for market to open 1')
 
         while True:
             if is_market_open():
@@ -1078,7 +1137,7 @@ def meic_loop():
         while True:
                 mqtt_client.loop(timeout=1.0)  # process network traffic, with a 1-second timeout
                 # time.sleep(1) 
-                market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset=0)
+                market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=2, close_offset=0)
 
 
                 if market_open_flag == False:
@@ -1113,6 +1172,21 @@ def meic_loop():
 
 # Main function to set up MQTT client and start the processing thread
 def main():
+
+    if real_trading_flag == True:
+        info_str = f'++++++++++ LIVE ++++++++++'
+
+    else:
+        info_str = f'---------- PAPER ----------'
+        
+
+    print(f'\n\n')
+    print(f'Paper/Live Mode: {info_str}')
+    print(f'Paper/Live Mode: {info_str}')
+    print(f'Paper/Live Mode: {info_str}')
+    print(f'Paper/Live Mode: {info_str}')
+    print(f'\n\n')
+    
 
     print(f'\nScheduled Entry Times:')
     show_times(entry_times)

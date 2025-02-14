@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 import os
 import time
 
+client_lock = threading.Lock()
+
 
 def load_env_variables():
     
@@ -204,15 +206,17 @@ def get_positions2():
 
         try:
 
-            client = schwabdev.Client(app_key, secret_key, tokens_file=my_tokens_file)
-            linked_accounts = client.account_linked().json()
-            # print(f'linked_accounts type:{type(linked_accounts)}, data:\n{linked_accounts}\n')
+            with client_lock:
 
-            account_hash = linked_accounts[0].get('hashValue')
-            # print(f'account_hash type:{type(account_hash)}, data:\n{account_hash}\n')
+                client = schwabdev.Client(app_key, secret_key, tokens_file=my_tokens_file)
+                linked_accounts = client.account_linked().json()
+                # print(f'linked_accounts type:{type(linked_accounts)}, data:\n{linked_accounts}\n')
 
-            account_details = client.account_details(account_hash, fields="positions").json()
-            # print(f'account_details type:{type(account_details)}, data:\n{account_details}\n')
+                account_hash = linked_accounts[0].get('hashValue')
+                # print(f'account_hash type:{type(account_hash)}, data:\n{account_hash}\n')
+
+                account_details = client.account_details(account_hash, fields="positions").json()
+                # print(f'account_details type:{type(account_details)}, data:\n{account_details}\n')
 
         except Exception as e:
             print(f"get_positions2() 6, An error occurred: {e}, exiting positions processing")
@@ -251,7 +255,8 @@ def get_positions2():
         if 'positions' in account_details['securitiesAccount']:
             my_positions = account_details['securitiesAccount']['positions']
 
-            update_positions(my_positions)
+            with client_lock:
+                update_positions(my_positions)
 
             short_positions = short_options()
             long_positions = long_options()
@@ -262,7 +267,7 @@ def get_positions2():
 
         else:
             # Handle the case where 'positions' key is not present
-            print("200 No positions in account data, resetting positions table")
+            # print("200 No positions in account data, resetting positions table")
             reset_positions()
             return get_positions_success_flag, short_positions, long_positions
 

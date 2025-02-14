@@ -33,21 +33,21 @@ def enter_spread_with_triggers(real_flag, client, hash, opt_type, short_leg, lon
 
             resp = client.order_place(hash, order_form)
             info_str = "\nPlaced order:"
-            print(info_str)
+            # print(info_str)
             meic.post_tranche_data(info_str)
 
             info_str = f"Response code: {resp}"
-            print(info_str)
+            # print(info_str)
             meic.post_tranche_data(info_str)
 
 
             # Print all response headers
-            print("\nall Response header items:")
+            # print("\nall Response header items:")
 
-            for header, value in resp.headers.items():
-                print(f"{header}: {value}")
+            # for header, value in resp.headers.items():
+            #     print(f"{header}: {value}")
 
-            print()
+            # print()
 
             info_str = f" "
             print(info_str)
@@ -61,8 +61,8 @@ def enter_spread_with_triggers(real_flag, client, hash, opt_type, short_leg, lon
             print(info_str)
             meic.post_tranche_data(info_str)
 
-            print(f'\nGet specific {opt_type} spread order details')
-            print(client.order_details(hash, order_id).json())
+            # print(f'\nGet specific {opt_type} spread order details')
+            # print(client.order_details(hash, order_id).json())
             order_details = client.order_details(hash, order_id).json()
 
         else:
@@ -93,7 +93,7 @@ def generate_order_STO_spread_with_triggers(short_sym, short_bid, long_sym, long
 
     price -= 0.10
 
-    stop_price = price * 2 + (long_ask * 1.2)
+    stop_price = original_price * 2 + (long_ask * 1.2) - 0.10
 
 
 
@@ -105,13 +105,13 @@ def generate_order_STO_spread_with_triggers(short_sym, short_bid, long_sym, long
     else:
         stop_price = round(stop_price * 20) / 20  # Round to nearest 0.05
 
-    info_str = f'\ngenerate_order {short_sym}/{long_sym}'
+    info_str = f'\nGenerating order for short: {short_sym} and long: {long_sym}'
     print(info_str)
     meic.post_tranche_data(info_str)
     info_str = f'short_bid:{short_bid:.2f}, long_ask:{long_ask:.2f}'
     print(info_str)
     meic.post_tranche_data(info_str)
-    info_str = f'original_price limit:{original_price:.2f}, adjusted price limit:{price:.2f}, stop_price:{stop_price:.2f}'
+    info_str = f'original_price:{original_price:.2f}, adjusted price:{price:.2f}, stop_price:{stop_price:.2f}'
     print(info_str)
     meic.post_tranche_data(info_str)
 

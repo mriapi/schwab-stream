@@ -1185,10 +1185,10 @@ def is_market_open():
 
 def wait_for_market_to_open():
     throttle_wait_display = 0
-    print(f'chain: waiting for market to open')
+    print(f'chain: in wait_for_market_to_open')
 
     while True:
-        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset=0)
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=1, close_offset=0)
         if market_open_flag:
             break
 
@@ -1204,7 +1204,7 @@ def wait_for_market_to_open():
             # current_time = datetime.now(eastern)
             # eastern_time_str = current_time.strftime('%H:%M:%S')
 
-            print(f'chain: 1 waiting for market to open, current Eastern time: {current_eastern_day} {current_eastern_hhmmss}')
+            print(f'chain: in wait_for_market_to_open, current Eastern time: {current_eastern_day} {current_eastern_hhmmss}')
 
             pass
 
@@ -1224,7 +1224,7 @@ def chain_loop():
 
         throttle_wait_display = 0
 
-        print(f'chain: waiting for market to open')
+        print(f'chain: in chain_loop(), waiting for market to open')
 
         while True:
             if is_market_open():
@@ -1238,7 +1238,7 @@ def chain_loop():
                 current_time = datetime.now(eastern)
                 eastern_time_str = current_time.strftime('%H:%M:%S')
 
-                print(f'chain: 2 waiting for market to open, current Eastern time: {eastern_time_str}')
+                print(f'chain: in chain_loop(), waiting for market to open, current Eastern time: {eastern_time_str}')
 
                 pass
 
@@ -1292,7 +1292,7 @@ def chain_loop():
         while True:
                 mqtt_client.loop(timeout=1.0)  # process network traffic, with a 1-second timeout
                 # time.sleep(1) 
-                market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset=0)
+                market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=1, close_offset=0)
 
 
                 if market_open_flag == False:
@@ -1332,7 +1332,18 @@ def main():
 
     print(f'chain test_destination directory:{test_destination}')
 
-    info_string = f'MAX TARGET:{recommend_config.MAX_SHORT_TARGET}, MIN TARGET:{recommend_config.MIN_SHORT_TARGET}, EM_MAX:{recommend_config.EM_MAX}, EM_MIN{recommend_config.EM_MIN}'
+    # info_string = (f'MAX TARGET:{recommend_config.MAX_SHORT_TARGET}, 
+    #     MIN TARGET:{recommend_config.MIN_SHORT_TARGET}, 
+    #     EM_MAX:{recommend_config.EM_MAX}, 
+    #     EM_MIN:{recommend_config.EM_MIN}, 
+    #     MIN_SHORT_TO_SPX:{recommend_config.MIN_SHORT_TO_SPX}')
+    
+    info_string = (f'MAX TARGET:{recommend_config.MAX_SHORT_TARGET}, '
+               f'MIN TARGET:{recommend_config.MIN_SHORT_TARGET}, '
+               f'EM_MAX:{recommend_config.EM_MAX}, '
+               f'EM_MIN:{recommend_config.EM_MIN}, '
+               f'MIN_SHORT_TO_SPX:{recommend_config.MIN_SHORT_TO_SPX}')
+
     print(info_string)
     persist_string(info_string)
 
@@ -1345,6 +1356,6 @@ def main():
 
 # Entry point of the program
 if __name__ == "__main__":
-    print(f'chain: calling main')
+    print(f'chain: startup')
     main()
-    print(f'chain: returned from main')
+    print(f'chain: returned from main, exiting')

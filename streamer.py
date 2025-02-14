@@ -19,15 +19,26 @@ import keyboard
 import pprint
 import queue
 import market_open
+import requests
 
 # message queue
 message_queue = queue.Queue()
 
 # resource lock (mutex)
 message_lock = threading.Lock()
+schwab_client_lock = threading.Lock()
+opt_tbl_lock = threading.Lock()
 
-MARKET_OPEN_OFFSET = 0
+
+MARKET_OPEN_OFFSET = 1
 MARKET_CLOSE_OFFSET = 0
+
+global last_extracted_spx_time
+last_extracted_spx_time = None
+global gbl_spx_last
+gbl_spx_last = None
+
+
 
 
 # Get the streamer version number from the file VERSIONS
@@ -57,6 +68,12 @@ gbl_quit_flag = False
 gbl_resubscribe_needed = False
 gbl_system_error_flag = False
 gbl_market_open_flag = False
+gbl_queried_pub_error_flag = False
+gbl_streamed_pub_error_flag = False
+time_since_last_stream_pub = False
+time_since_last_queried_pub = False
+gbl_schwab_client = None
+
 
 
 call_strike_tbl = []
@@ -117,6 +134,8 @@ def subscribe_to_options(passed_streamer_client):
     global prev_call_list
     global gbl_system_error_flag
 
+    global schwab_client_lock
+
     # print(f'streamer_client type:{type(passed_streamer_client)}, value:{passed_streamer_client}')
 
     my_client = passed_streamer_client
@@ -124,10 +143,12 @@ def subscribe_to_options(passed_streamer_client):
     # my_client.send(my_client.level_one_equities("TSLA", "0,1,2,3,4,5,6,7,8"))
 
     # Extract each put symbol, create a comma-separated string, and subscribe
-    put_list = ', '.join(item['Symbol'] for item in put_strike_tbl)
+    with opt_tbl_lock:
+        put_list = ', '.join(item['Symbol'] for item in put_strike_tbl)
     # print(f'2P put_list type:{type(put_list)}, data:]\n{put_list}')
 
     try:
+        # with schwab_client_lock:
         my_client.send(my_client.level_one_options(put_list, "0,1,2,3,4,5,6,7,8,10,28,29,30,31,32"))
     
     except Exception as e:
@@ -138,11 +159,13 @@ def subscribe_to_options(passed_streamer_client):
 
 
     # # Extract each call symbol, create a comma-separated string, and subscribe
-    call_list = ', '.join(item['Symbol'] for item in call_strike_tbl)
+    with opt_tbl_lock:
+        call_list = ', '.join(item['Symbol'] for item in call_strike_tbl)
     # print(f'2C call_list type:{type(call_list)}, data:]\n{call_list}')
 
 
     try:
+        # with schwab_client_lock:
         my_client.send(my_client.level_one_options(call_list, "0,1,2,3,4,5,6,7,8,10,28,29,30,31,32"))
 
     except Exception as e:
@@ -182,6 +205,8 @@ def streamer_thread(client):
     global gbl_resubscribe_needed
     global gbl_market_open_flag
 
+    global schwab_client_lock
+
     print(f'streamer_thread() entry')
     
     while gbl_market_open_flag == False:
@@ -202,6 +227,7 @@ def streamer_thread(client):
     strm_client = None
 
     try:
+        # with schwab_client_lock:
         strm_client = client.stream
 
     except Exception as e:
@@ -212,6 +238,7 @@ def streamer_thread(client):
 
     # start the stream message handler
     try: 
+        # with schwab_client_lock:
         strm_client.start(my_handler)
 
     except Exception as e:
@@ -223,6 +250,7 @@ def streamer_thread(client):
 
     # subscribe to SPX (schwab api requires "$SPX")
     try:
+        # with schwab_client_lock:
         strm_client.send(strm_client.level_one_equities("$SPX", "0,1,2,3,4,5,6,7,8"))
 
     except Exception as e:
@@ -232,6 +260,7 @@ def streamer_thread(client):
     
     # # subscribe to account activity
     # try:
+    #     # with schwab_client_lock:
     #     strm_client.send(strm_client.account_activity("Account Activity", "0,1,2,3"))
 
     # except Exception as e:
@@ -282,14 +311,16 @@ def streamer_thread(client):
     
 
     # Extract each put symbol, create a comma-separated string, and subscribe
-    put_list = ', '.join(item['Symbol'] for item in put_strike_tbl)
+    with opt_tbl_lock:
+        put_list = ', '.join(item['Symbol'] for item in put_strike_tbl)
     # print(f'1P put_list type:{type(put_list)}, data:]\n{put_list}')
-    # strm_client.send(strm_client.level_one_options(put_list, "0,1,2,3,4,5,6,7,8,10,28,29,30,31,32"))
+
 
     # Extract each call symbol, create a comma-separated string, and subscribe
-    call_list = ', '.join(item['Symbol'] for item in call_strike_tbl)
+    with opt_tbl_lock:
+        call_list = ', '.join(item['Symbol'] for item in call_strike_tbl)
     # print(f'1C call_list type:{type(call_list)}, data:]\n{call_list}')
-    # strm_client.send(strm_client.level_one_options(call_list, "0,1,2,3,4,5,6,7,8,10,28,29,30,31,32"))
+
 
     subscribe_to_schwab(client)
     subscribe_to_options(strm_client)
@@ -319,7 +350,8 @@ def streamer_thread(client):
 
         if gbl_resubscribe_needed == True:
 
-            # print(f'in streamer thread, re-subscribe needed')
+            # print(f'in streamer thread, gbl_resubscribe_needed is true')
+
             gbl_resubscribe_needed = False
             subscribe_to_schwab(client)
             subscribe_to_options(strm_client)
@@ -328,6 +360,7 @@ def streamer_thread(client):
     print(f'streamer_thread client.stream.stop()')
 
     try:
+        # with schwab_client_lock:
         client.stream.stop()
 
     except Exception as e:
@@ -458,6 +491,7 @@ def publish_quote(topic, payload):
 
 
 def publish_raw_queried_quote(data):
+    global time_since_last_queried_pub
 
     # pretty_json = json.dumps(data, indent=2)
     # print(f'in publish_raw_streamed_quote, pretty_json type:{type(pretty_json)}, data:\n{pretty_json}')
@@ -468,17 +502,20 @@ def publish_raw_queried_quote(data):
 
     topic = "schwab/queried"
     publish_quote(topic, json_str)
+    time_since_last_queried_pub = 0
     pass
 
 
 
 def publish_raw_streamed_quote(data):
+    global time_since_last_stream_pub
 
     json_str = json.dumps(data)
     # print(f'in publish_raw_streamed_quote, json_str type:{type(json_str)}, data:\n{json_str}')
 
     topic = "schwab/stream"
     publish_quote(topic, json_str)
+    time_since_last_stream_pub = 0
     pass
 
 
@@ -682,8 +719,37 @@ def any_abort_condition():
         reason_str += f'market close detected'
         return_val = True
 
+    if gbl_queried_pub_error_flag:
+        print(f'any_abort_condition True because of gbl_queried_pub_error_flag')
+        reason_str += f'queried pub error'
+        return_val = True
+
+    if gbl_streamed_pub_error_flag:
+        print(f'any_abort_condition True because of gbl_streamed_pub_error_flag')
+        reason_str += f'streamed pub error'
+        return_val = True
+
     return return_val, reason_str
 
+
+
+
+# TODO CHECK
+def extract_spx_last(item):
+    global gbl_spx_last, last_extracted_spx_time
+
+    try:
+
+        if 'content' in item and isinstance(item['content'], list):
+            for entry in item['content']:
+                if 'key' in entry and entry['key'] == '$SPX' and 'last' in entry:
+                    gbl_spx_last = entry['last']
+                    last_extracted_spx_time = datetime.now()
+                    break
+
+    except Exception as e:
+        print(f'extract_spx_last error:{e}')
+        pass
 
 
 processor_msg_cnt = 0
@@ -772,6 +838,22 @@ def message_processor():
 
                 publish_raw_streamed_quote(json_message)
 
+                for item in json_message.get("data", []):
+                    service = item.get("service")
+                    if service == "LEVELONE_EQUITIES":
+                        # TODO CHECK
+                        extract_spx_last(item)
+                        # print(f'942 gbl_spx_last:{gbl_spx_last} extracted at {last_extracted_spx_time}')
+                        # print()
+                        # print()
+
+
+
+
+
+
+
+
 
                 # for item in json_message.get("data", []):
                 #     service = item.get("service")
@@ -834,11 +916,13 @@ def build_option_tables2(option_syms, option_type):
     global call_strike_tbl
 
     if option_type == "PUT":
-        put_strike_tbl = []
+        with opt_tbl_lock:
+            put_strike_tbl = []
         # print(f'in build_option_tables2(), type:{option_type}, zeroed out put_strike_tbl')
 
     if option_type == "CALL":
-        call_strike_tbl = []
+        with opt_tbl_lock:
+            call_strike_tbl = []
         # print(f'in build_option_tables2(), type:{option_type}, zeroed out call_strike_tbl')
 
     for item in option_syms:
@@ -850,12 +934,14 @@ def build_option_tables2(option_syms, option_type):
         if option_type == "CALL":
             new_call_option = {"Type": "CALL", "Strike": strike_int, "Bid": 0.0, "Ask": 0.0, "Last": 0.0, "Symbol": item}
             # print(f'883 new call to add:{new_call_option}')
-            call_strike_tbl.append(new_call_option)
+            with opt_tbl_lock:
+                call_strike_tbl.append(new_call_option)
 
         elif option_type == "PUT":
             new_put_option = {"Type": "PUT", "Strike": strike_int, "Bid": 0.0, "Ask": 0.0, "Last": 0.0, "Symbol": item}
             # print(f'884 new put to add:{new_put_option}')
-            put_strike_tbl.append(new_put_option)
+            with opt_tbl_lock:
+                put_strike_tbl.append(new_put_option)
 
 
 
@@ -879,10 +965,12 @@ def build_option_tables(option_map, option_type):
     # initialize the table that we are buildling
 
     if option_type == "PUT":
-        put_strike_tbl = []
+        with opt_tbl_lock:
+            put_strike_tbl = []
 
     if option_type == "CALL":
-        call_strike_tbl = []
+        with opt_tbl_lock:
+            call_strike_tbl = []
 
 
     for expiration, strikes in option_map.items():
@@ -902,14 +990,16 @@ def build_option_tables(option_map, option_type):
                     # print(f'this was a CALL strike') 
                     new_call_option = {"Type": "CALL", "Strike": strike, "Bid": my_bid, "Ask": my_ask, "Last": last_fl, "Symbol": my_opt_symbol}
                     # print(f'492 new_call_option:{new_call_option}')
-                    call_strike_tbl.append(new_call_option)
+                    with opt_tbl_lock:
+                        call_strike_tbl.append(new_call_option)
                     # print(f'call_strike_tbl:\n{call_strike_tbl}')
 
                 elif option_type == "PUT":
                     # print(f'this was a PUT strike') 
                     new_put_option = {"Type": "PUT", "Strike": strike, "Bid": my_bid, "Ask": my_ask, "Last": last_fl, "Symbol": my_opt_symbol}
                     # print(f'592 new_put_option:{new_put_option}')
-                    put_strike_tbl.append(new_put_option)
+                    with opt_tbl_lock:
+                        put_strike_tbl.append(new_put_option)
                     # print(f'put_strike_tbl:\n{put_strike_tbl}')
                     
 
@@ -1048,6 +1138,9 @@ def get_today_in_epoch():
 def get_current_spx(client, milliseconds_since_epoch):
     global gbl_system_error_flag
     global gbl_market_open_flag
+    global waiting_for_quote
+
+    global schwab_client_lock
 
     open_fl = None
     high_fl = None
@@ -1079,6 +1172,8 @@ def get_current_spx(client, milliseconds_since_epoch):
 
 
         try:
+            # with schwab_client_lock:
+            waiting_for_quote = True
             spx_history = client.price_history(
                 "$SPX", 
                 periodType='month',
@@ -1091,7 +1186,10 @@ def get_current_spx(client, milliseconds_since_epoch):
                 endDate=milliseconds_since_epoch
                 ).json()
             
+            waiting_for_quote = False
+                
         except Exception as e:
+            waiting_for_quote = False
             current_time = datetime.now()
             time_str = current_time.strftime('%H:%M:%S')
             print(f"112SEF spx_history = client.price_history: An error occurred: {e} at {time_str}")
@@ -1141,7 +1239,9 @@ def get_current_spx(client, milliseconds_since_epoch):
             return open_fl, high_fl, low_fl, close_fl
         
         except IndexError:
-            temp_str = f"116SEF Error while looking for SPX candle: 'candles' list is empty"
+            current_time = datetime.now()
+            time_str = current_time.strftime('%H:%M:%S')
+            temp_str = f"116SEF Error while looking for SPX candle at {time_str}: 'candles' list is empty"
             print(temp_str)
             pretty_json = json.dumps(spx_history, indent=2)
             print(f'spx_history:\n{pretty_json}\n\n')
@@ -1179,9 +1279,26 @@ def get_current_spx(client, milliseconds_since_epoch):
 # if needed (if SPX has wandered too far since the last option subseciptiions)
 # then re-subscribe
 last_spx_check_time = None
-def init_check_spx_last():
+def init_check_spx_last(client):
     global last_spx_check_time
-    last_spx_check_time = datetime.now()
+    global last_extracted_spx_time
+    global gbl_spx_last
+
+    last_extracted_spx_time = last_spx_check_time = datetime.now()
+
+    while True:
+        try:
+            spx_init = client.quote("$SPX").json()
+            gbl_spx_last = spx_init['$SPX']['quote']['lastPrice']
+
+            # print(f'spx_init data:\n{spx_init}')           
+            # print(f'gbl_spx_last:{gbl_spx_last}')
+            break
+
+        except Exception as e:
+            print(f'error trying to initialize SPX quote:{e}')
+            time.sleep(0.2)
+            continue
 
 
 def check_for_subscribe_update(client):
@@ -1189,6 +1306,7 @@ def check_for_subscribe_update(client):
     global gbl_close_fl
     global gbl_resubscribe_needed
     global gbl_system_error_flag
+    global last_extracted_spx_time
 
     CHECK_INTERVAL = 20
 
@@ -1196,21 +1314,42 @@ def check_for_subscribe_update(client):
     current_time = datetime.now()
     elapsed_time = (current_time - last_spx_check_time).total_seconds()
 
+
+    elapsed_from_extract = (current_time - last_extracted_spx_time).total_seconds()
+
+    # TODO CHECK consider using the extracted gbl_spx_last instead of get_current_spx
+    # print(f'in check_for_subscribe_update, gbl_spx_last:{gbl_spx_last} extracted at {last_extracted_spx_time}')
+    # print(f'elapsed from extract:{elapsed_from_extract}')
+    # print(f'current_time:{current_time}, elapsed_time:{elapsed_time},  gbl_close_fl:{gbl_close_fl}')
+
     # If 30 seconds have passed since the last SPX price check
-    if elapsed_time>= CHECK_INTERVAL:
+    if elapsed_time >= CHECK_INTERVAL:
+
+        # print(f'checking for subscribe update, elapsed time: {elapsed_time}')
 
         # Update the last SPX check time
         last_spx_check_time = current_time
         # print(f'Updating last_spx_check_time to {last_spx_check_time}')
 
-        open, high, low, close = get_current_spx(client, todays_epoch_time)
 
-        if open == None or high == None or low == None or close == None:
-            temp_str = f"120SEF in check_for_subscribe_update() get_current_spx returned one or more 'None' value(s)"
-            print(temp_str)
-            logging.error(temp_str)
-            gbl_system_error_flag = True
-            return
+
+
+
+
+        # TODO CHECK  This was commented out
+        # open, high, low, close = get_current_spx(client, todays_epoch_time)
+
+        # if open == None or high == None or low == None or close == None:
+        #     temp_str = f"120SEF in check_for_subscribe_update() get_current_spx returned one or more 'None' value(s)"
+        #     print(temp_str)
+        #     logging.error(temp_str)
+        #     gbl_system_error_flag = True
+        #     return
+
+        # TODO CHECK and replaced by this
+        close = gbl_spx_last
+        # print(f'340NC new close:{close}')
+
 
 
         spx_change = abs(gbl_close_fl - close)
@@ -1221,9 +1360,16 @@ def check_for_subscribe_update(client):
 
         if spx_change >= 0.5:
 
-            # print(f'Time to re-subscribe:{spx_change}')
+            # print(f'340RS Time to re-subscribe spx_change:{spx_change}')
             gbl_close_fl = close
             gbl_resubscribe_needed = True
+
+            # with opt_tbl_lock:
+            #     print(f'put_strike_tbl:\n{put_strike_tbl}\n')
+            #     print(f'call_strike_tbl:\n{call_strike_tbl}\n')
+            #     pass
+
+
 
 
             pass
@@ -1247,10 +1393,14 @@ def build_strike_lists(client):
     # print(f'todays_epoch_time type:{type(todays_epoch_time)}, value{todays_epoch_time}')
 
 
+
+
     spx_open, spx_high, spx_low, spx_close = get_current_spx(client, todays_epoch_time)
 
     if spx_open == None or spx_high == None or spx_low == None or spx_close == None:
-        temp_str = f"122SEF in build_strike_lists() get_current_spx returned one or more 'None' value(s)"
+        current_time = datetime.now()
+        time_str = current_time.strftime('%H:%M:%S')
+        temp_str = f'122SEF in build_strike_lists() get_current_spx returned one or more None value(s) at {time_str}'
         print(temp_str)
         logging.error(temp_str)
         gbl_system_error_flag = True
@@ -1338,12 +1488,26 @@ def subscribe_to_schwab(client):
 last_put_index = 9999
 last_call_index = 9999
 
+waiting_for_quote = False
+
 def update_quote(client):
     global put_strike_tbl
     global call_strike_tbl
     global last_put_index 
     global last_call_index 
     global gbl_system_error_flag
+    global time_since_last_queried_pub
+    global waiting_for_quote
+
+
+    global schwab_client_lock
+
+    current_time = datetime.now()
+    time_str = current_time.strftime('%H:%M:%S')
+
+    if time_since_last_queried_pub > 2:
+        print(f'in update_quote and time_since_last_queried_pub:{time_since_last_queried_pub} at {time_str}')
+
 
     basic_topic = "schwab/option/spx/basic/"
 
@@ -1354,7 +1518,7 @@ def update_quote(client):
     # print(f'size_put_list:{size_put_list}, size_call_list:{size_call_list}')
     # print(f'put_strike_tbl type:{type(put_strike_tbl)}, data:\n{put_strike_tbl}')
 
-    # print(f'size_put_list type:{type(size_put_list)}, value:{size_put_list}')
+    # print(f'size_put_list type:{type(size_put_time_since_last_queried_publist)}, value:{size_put_list}')
     # print(f'last_put_index type:{type(last_put_index)}, value:{last_put_index}')
 
     # print(f'prev last_put_index:{last_put_index}, prev last_call_index:{last_call_index}, ')
@@ -1381,7 +1545,8 @@ def update_quote(client):
     # print(f' new last_call_index:{last_call_index}, size_call_list:{size_call_list}')  
 
     if size_put_list > 0:
-        current_put_item = put_strike_tbl[last_put_index]
+        with opt_tbl_lock:
+            current_put_item = put_strike_tbl[last_put_index]
 
         if 'Symbol' in current_put_item:
             put_opt_sym = current_put_item['Symbol']
@@ -1392,21 +1557,45 @@ def update_quote(client):
             put_quote = None
 
             try:
+                # with schwab_client_lock:
+                waiting_for_quote = True
                 put_quote = client.quote(put_opt_sym).json()
+                waiting_for_quote = False
                 
             except Exception as e:
+                waiting_for_quote = False
                 if put_quote == None:
                     # return without flagging a system error
-                    # print(f'put_quote is None, returning wihtout flagging a system error')
-                    return
+                    # print(f'put_quote is None for {put_opt_sym}, error message:{e}, returning without flagging a system error at {time_str}')
+                    # print(f'e type:{type(e)}, e message:{e}')
+
+                    # an Expective value error is returned when this option does not exist
+                    if "Expecting value:" in str(e):
+                        # TODO: prune non-existent itmes fom the put and call lists
+                        # print(f'703 The string <Expecting value:> WAS found in e, so {put_opt_sym} is assumed to not exist')
+                        time_since_last_queried_pub = 0
+
+                    if "Read timed out" in str(e):
+                        print(f'put quote timeout error at {time_str}, returning')
+                        time_since_last_queried_pub = 0
+                        return
+
+      
+                else:
                 
-                gbl_system_error_flag = True
-                return
+                    print(f'30 client.quote exception:{e} for puts 30: put_quote type:{type(put_quote)}, data:\n{put_quote}')
+                
+                    gbl_system_error_flag = True
+                    return
             
             # print(f'dbg client.quote 20: put_quote type:{type(put_quote)}, data:\n{put_quote}')
 
-            
-            publish_raw_queried_quote(put_quote)
+            if put_quote != None:
+                publish_raw_queried_quote(put_quote)
+
+            else:
+                if time_since_last_queried_pub > 1:
+                    print(f'294p put quote not published, time_since_last_queried_pub:{time_since_last_queried_pub}')
 
 
             # print(f'put_quote type:{type(put_quote)}, data:\n')
@@ -1444,7 +1633,8 @@ def update_quote(client):
 
 
     if size_call_list > 0:
-        current_call_item = call_strike_tbl[last_call_index]
+        with opt_tbl_lock:
+            current_call_item = call_strike_tbl[last_call_index]
 
         if 'Symbol' in current_call_item:
             call_opt_sym = current_call_item['Symbol']
@@ -1454,23 +1644,47 @@ def update_quote(client):
             call_quote = None
 
             try:
+                # with schwab_client_lock:
+                waiting_for_quote = True
                 call_quote = client.quote(call_opt_sym).json()
+                waiting_for_quote = False
                 
             except Exception as e:
+                waiting_for_quote = False
+                # print(f'956 client.quote for {call_opt_sym} returned error {e}')
+
                 if call_quote == None:
                     # return without flagging a system error
-                    # print(f'call_quote is None, returning wihtout flagging a system error')
+                    # print(f'call_quote type:{call_quote}, data:{call_quote}')
+                    # print(f'call_quote is None for {call_opt_sym}, error message:{e}, returning without flagging a system error at {time_str}')
+                    # print(f'e type:{type(e)}, e message:{e}')
+                    
+
+                    if "Expecting value:" in str(e):
+                        # TODO: prune non-existent itmes fom the put and call lists
+                        # print(f'803 The string <Expecting value:> WAS found in e, so {call_opt_sym} is assumed to not exist')
+                        time_since_last_queried_pub = 0
+
+                    if "Read timed out" in str(e):
+                        print(f'call quote timeout error at {time_str}, returning')
+                        time_since_last_queried_pub = 0
+                        return
+
+                  
+
+                else:
+                    print(f'60 client.quote exception:{e} for calls 60: call_quote type:{type(call_quote)}, data:\n{call_quote}')
+                    gbl_system_error_flag = True
                     return
-
-
-                print(f'dbg client.quote 30: call_quote type:{type(call_quote)}, data:\n{call_quote}')
-                gbl_system_error_flag = True
-                return
             
             # print(f'dbg client.quote 40: call_quote type:{type(call_quote)}, data:\n{call_quote}')
 
-            
-            publish_raw_queried_quote(call_quote)
+            if call_quote != None:
+                publish_raw_queried_quote(call_quote)
+
+            else:
+                if time_since_last_queried_pub > 1:
+                    print(f'294c call quote not published, time_since_last_queried_pub:{time_since_last_queried_pub}')
             
 
             # print(f'call_quote type:{type(call_quote)}, data:\n')
@@ -1518,11 +1732,104 @@ def mqtt_on_connect(client, userdata, flags, reason_code, properties=None):
         gbl_system_error_flag = True
 
 
+def supervisor():
+    global time_since_last_stream_pub
+    global time_since_last_queried_pub
+    global gbl_queried_pub_error_flag
+    global gbl_streamed_pub_error_flag
+    global gbl_system_error_flag
+
+
+    print(f'supervisor() entry')
+
+    FORCE_STREAMER_TIMEOUT = False
+    FORCE_QUERIED_TIMEOUT = False
+    force_cnt = 0
+
+
+    while gbl_market_open_flag == False:
+        # print(f'294 waiting for market open')
+        time.sleep(1)
+
+    time.sleep(10)
+
+    time_since_last_stream_pub = 0
+    time_since_last_queried_pub = 0
+
+
+    while True:
+
+        abort_flag, abort_msg = any_abort_condition()
+
+        if abort_flag == True:
+            print(f'supervisor(), abort flag is true ({abort_msg})')
+            return
+        
+
+        time_since_last_stream_pub += 1
+
+        if waiting_for_quote != True:
+            time_since_last_queried_pub += 1
+        
+        else:
+            pass
+            # print(f'in supervisor, waiting for quote is True')
+
+
+
+        # print(f'time since stream pub:{time_since_last_stream_pub}')
+        # print(f'time since queried pub:{time_since_last_queried_pub}')
+
+        SUPERVISOR_TIMEOUT = 10
+
+
+        # logic to test streamer pub queried pub timeouts
+        # force_cnt += 1
+        # print(f'force_cnt:{force_cnt}')
+        # if FORCE_STREAMER_TIMEOUT == True:
+        #     if force_cnt > SUPERVISOR_TIMEOUT:
+        #         time_since_last_stream_pub = SUPERVISOR_TIMEOUT + 2
+        # if FORCE_QUERIED_TIMEOUT == True:
+        #     if force_cnt > SUPERVISOR_TIMEOUT:
+        #         time_since_last_queried_pub = SUPERVISOR_TIMEOUT + 2
+
+
+        if time_since_last_queried_pub > SUPERVISOR_TIMEOUT:
+            current_time = datetime.now()
+            time_str = current_time.strftime('%H:%M:%S')
+            gbl_queried_pub_error_flag = True
+            gbl_system_error_flag = True
+            info_str = f'Query supervision timeout at {time_str}, time_since_last_queried_pub:{time_since_last_queried_pub}'
+            logging.error(info_str)
+            print(info_str)
+            return
+        
+        if time_since_last_stream_pub > SUPERVISOR_TIMEOUT:
+            current_time = datetime.now()
+            time_str = current_time.strftime('%H:%M:%S')
+            gbl_streamed_pub_error_flag = True
+            gbl_system_error_flag = True
+            info_str = f'Streamer supervision timeout at {time_str}, time_since_last_stream_pub:{time_since_last_stream_pub}'
+            logging.error(info_str)
+            print(info_str)
+            return
+
+        
+        
+        
+        time.sleep(1)
+
+
+def get_schab_client():
+    global gbl_schwab_client
+    return gbl_schwab_client
+
 
 def system_loop():
     global gbl_quit_flag
     global gbl_system_error_flag
     global mqtt_client_tx
+    global gbl_schwab_client
 
     # global gbl_open_fl
     # global gbl_high_fl
@@ -1558,18 +1865,23 @@ def system_loop():
     create_client_count = 0
 
 
-    main_loop_seconds_count = 0
+    sys_loop_count = 0
     # while we try to create a schwabdev client
     while True:
         try:
             client = schwabdev.Client(app_key, secret_key, tokens_file=my_tokens_file)
+            gbl_schwab_client = client
             break
 
         except Exception as e:
             create_client_count += 1
-            print(f"client = schwabdev.Client: An error occurred: {e}.  Attempt # {create_client_count}. Retrying")
-            time.sleep(1)
-            continue
+            info_str = f'client = schwabdev.Client: An error occurred: {e}.  Attempt # {create_client_count}. Retrying'
+            print(info_str)
+            logging.error(info_str)
+            gbl_system_error_flag = True
+            time.sleep(2)
+            return
+            
     # while we try to create a schwabdev client
 
     # print(f'835-110 system_loop(), schwabdev client created')
@@ -1622,11 +1934,15 @@ def system_loop():
     message_processor_thread = Thread(target=message_processor, name="message_processor", daemon=True)
     message_processor_thread.start()
 
+    # Start the supervisor thread
+    supervisor_thread = Thread(target=supervisor, name="supervisor", daemon=True)
+    supervisor_thread.start()
+
 
     # print(f'835-170 system_loop(), created threads')
 
 
-    init_check_spx_last()
+    init_check_spx_last(client)
 
 
 
@@ -1634,6 +1950,8 @@ def system_loop():
 
     # run while the market is open and while we have no system errors or quite signal
     while True:
+
+        sys_loop_count += 1
 
 
         abort_flag, abort_reason = any_abort_condition()
@@ -1652,8 +1970,14 @@ def system_loop():
             message_processor_thread.join()
             print(f'message_processor_thread has finished')
 
+            print(f'waiting for supervisor_thread to finish')
+            supervisor_thread.join()
+            print(f'supervisor_thread has finished')
+
             # graceful exit for mqtt client
-            temp_str = f'MQTT client disconnect and loop_stop'
+            current_time = datetime.now()
+            time_str = current_time.strftime('%H:%M:%S')
+            temp_str = f'Disconnecting MQTT client and executing loop_stop at {time_str}'
             print(temp_str)
             logging.info(temp_str)
             mqtt_client_tx.disconnect()  # Disconnect from broker
@@ -1666,9 +1990,41 @@ def system_loop():
             
         #main loop wait
         time.sleep(1.0)
+
+
+        current_time_1 = datetime.now()
+        time_str_1 = current_time_1.strftime('%H:%M:%S')
         
         check_for_subscribe_update(client)
+
+        # time.sleep(0.001)
+
+        current_time_2 = datetime.now()
+        time_str_2 = current_time_2.strftime('%H:%M:%S')
+
+        # Calculate the elapsed time between first and second capture
+        elapsed_time_1_2 = current_time_2 - current_time_1
+        elapsed_seconds_1_2 = elapsed_time_1_2.total_seconds()
+        # print(f'elapsed_seconds_1_2: {elapsed_seconds_1_2}')
+
+        if elapsed_seconds_1_2 > 1.0:
+            print(f'excessive elapsed_seconds_1_2: {elapsed_seconds_1_2}, loop count:{sys_loop_count} at {time_str_2}')
+
         update_quote(client)
+
+        current_time_3 = datetime.now()
+        time_str_3 = current_time_3.strftime('%H:%M:%S')
+
+        
+        # Calculate the elapsed time between second and third capture
+        elapsed_time_2_3 = current_time_3 - current_time_2
+        elapsed_seconds_2_3 = elapsed_time_2_3.total_seconds()
+        # print(f'elapsed_seconds_2_3: {elapsed_seconds_2_3}')
+
+        if elapsed_seconds_2_3 > 3.0:
+            print(f'excessive elapsed_seconds_2_3: {elapsed_seconds_2_3}, loop count:{sys_loop_count} at {time_str_3}')
+
+
 
 
         # # force quit/error
@@ -1700,15 +2056,54 @@ def main():
     global gbl_system_error_flag
     global main_loop_count
 
+    global gbl_resubscribe_needed
+    global gbl_system_error_flag
+    global gbl_market_open_flag
+    global gbl_queried_pub_error_flag
+    global gbl_streamed_pub_error_flag
+    global time_since_last_stream_pub
+    global time_since_last_queried_pub
+    global gbl_schwab_client
+
+
+
+
+
+
+
+
+
+
+    global_quit_flag = False
+
     # logging.basicConfig(level=logging.INFO)
     logging.basicConfig(filename='streamer.log', level=logging.INFO, 
         format='%(asctime)s - %(levelname)s - %(message)s')
 
-    main_loop_count 
+    main_loop_count = 0
+
     while True:
+
         main_loop_count += 1
 
         gbl_system_error_flag = False
+        gbl_resubscribe_needed = False
+        gbl_system_error_flag = False
+        gbl_market_open_flag = False
+        gbl_queried_pub_error_flag = False
+        gbl_streamed_pub_error_flag = False
+        time_since_last_stream_pub = 0
+        time_since_last_queried_pub = 0
+        gbl_schwab_client = None
+
+
+
+
+
+
+
+
+
 
         # system_loop 
         # - waits for the market to open
