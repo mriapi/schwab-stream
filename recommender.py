@@ -30,8 +30,8 @@ min_net_credit = recommend_config.MIN_NET_CREDIT   # min net credit
 optimal_net_credit = recommend_config.OPTIMAL_NET_CREDIT   # optimal credit
 max_long_val = recommend_config.MAX_LONG_VAL       # max ask value for long leg
 min_long_val = recommend_config.MIN_LONG_VAL       # min ask value for long leg
-min_spx_distance = recommend_config.MIN_SPX_DISTANCE   # minimum difference bewteen strike price of the long leg 
-                                                    # and current price of SPX
+min_short_to_spx = recommend_config.MIN_SHORT_TO_SPX   # minimum offset between short strike and current SPX
+
 
 max_short_target = recommend_config.MAX_SHORT_TARGET
 min_short_target = recommend_config.MIN_SHORT_TARGET
@@ -46,7 +46,7 @@ EM_MIN = recommend_config.EM_MIN
 # print(f'min_net_credit:{type(min_net_credit)}, value: {min_net_credit}')
 # print(f'max_long_val:{type(max_long_val)}, value: {max_long_val}')
 # print(f'min_long_val:{type(min_long_val)}, value: {min_long_val}')
-# print(f'min_spx_distance:{type(min_spx_distance)}, value: {min_spx_distance}')
+# print(f'min_short_to_spx:{min_short_to_spx}')
 # print(f'strategy: {strategy} ({strategy_desc})')
 
 
@@ -271,9 +271,11 @@ def pick_legs(option_list, short_positions, long_positions, spx_price, option_ty
 
 
 
+
         # Filter the out-of-the-money (OTM) options based on the type (CALL or PUT)
         if option_type == "CALL":
-            otm_list = [opt for opt in option_list if opt.get('STRIKE') and opt['STRIKE'] > (spx_price + 2)]
+            # otm_list = [opt for opt in option_list if opt.get('STRIKE') and opt['STRIKE'] > (spx_price + 2)]
+            otm_list = [opt for opt in option_list if opt.get('STRIKE') and opt['STRIKE'] > (spx_price + min_short_to_spx)]
             short_otm_list = [item for item in otm_list if item['symbol'] not in long_call_positions]
             # print(f'320 call short_otm_list:')
             # display_sym_bid_ask(short_otm_list)
@@ -288,7 +290,8 @@ def pick_legs(option_list, short_positions, long_positions, spx_price, option_ty
             last_call_long_list = long_otm_list
 
         elif option_type == "PUT":
-            otm_list = [opt for opt in option_list if opt.get('STRIKE') and opt['STRIKE'] < (spx_price - 2)]
+            # otm_list = [opt for opt in option_list if opt.get('STRIKE') and opt['STRIKE'] < (spx_price - 2)]
+            otm_list = [opt for opt in option_list if opt.get('STRIKE') and opt['STRIKE'] < (spx_price - min_short_to_spx)]
             short_otm_list = [item for item in otm_list if item['symbol'] not in long_put_positions]
             # print(f'340 put short_otm_list:')
             # display_sym_bid_ask(short_otm_list)

@@ -10,23 +10,27 @@ from datetime import datetime, timezone, timedelta
 import warnings
 import json
 import pytz
-from tabulate import tabulate
 import calendar
 import pytz
 import market_open
 
 quote_df_lock = threading.Lock()
+global quote_df
 
 global mqtt_client
+global schwab_client
 
 global gbl_total_message_count
 gbl_total_message_count = 0
 
-
-market_open_flag = False
+global time_since_last_quereied
+time_since_last_quereied = 0
 
 global time_since_last_stream
-global time_since_last_queried
+time_since_last_stream = 0
+
+
+market_open_flag = False
 
 
 
@@ -159,8 +163,7 @@ def on_message(client, userdata, msg):
 
 
 
-# Create an empty pandas DataFrame for quotes
-quote_df = pd.DataFrame(columns=['symbol', 'bid', 'bid_time', 'ask', 'ask_time', 'last', 'last_time'])
+
 
 
 # Function to update the quote DataFrame
@@ -497,6 +500,12 @@ def process_message():
     global time_since_last_stream
     global time_since_last_quereied
 
+    # ensure that the market is open
+    while True:
+        time.sleep(1)
+        if market_open_flag == True:
+            break
+
     MARKET_OPEN_OFFSET = 0
     MARKET_CLOSE_OFFSET = 0
 
@@ -581,11 +590,13 @@ def process_message():
             # Count the number of rows with NaN or None values in 'bid' or 'ask'
             rows_with_nan_bid_ask = quote_df_sorted[['bid', 'ask']].isna().any(axis=1).sum()
 
-            if time_since_last_quereied < 30 and time_since_last_stream < 30:
+            if time_since_last_quereied < 90 and time_since_last_stream < 20:
                 publish_grid(quote_df_sorted, rows_with_nan_bid_ask, request_id)
 
             else:
-                print(f'grid refused to publish -- too much time since last data')
+                current_time = datetime.now()
+                time_str = current_time.strftime('%H:%M:%S')
+                print(f'grid refused to publish at {time_str} because too much time since last data')
                 print(f'time_since_last_quereied:{time_since_last_quereied},  time_since_last_stream:{time_since_last_stream}')
 
 
@@ -644,10 +655,17 @@ def publish_grid(quote_df_sorted, rows_with_nan_bid_ask, request_id):
 
 
 
-def meic_entry(schwab_client):
+def grid_handling(schwab_client):
     global quote_df
     global time_since_last_stream
     global time_since_last_quereied
+
+
+    # Ensure that the market is open
+    while True:
+        time.sleep(1)
+        if market_open_flag == True:
+            break
 
 
 
@@ -668,13 +686,24 @@ def meic_entry(schwab_client):
         time_since_last_stream += 1
         time_since_last_quereied += 1
 
-        if time_since_last_quereied > 10 or time_since_last_stream > 10:
-                print(f'grid: total loop:{total_loop_count}, since stream:{time_since_last_stream}, since queried:{time_since_last_quereied}')
+        if market_open_flag == True and (time_since_last_quereied > 5 or time_since_last_stream > 5):
+            current_time = datetime.now()
+            time_str = current_time.strftime('%H:%M:%S')
+            print(f'grid: total loop:{total_loop_count}, since stream:{time_since_last_stream}, since queried:{time_since_last_quereied} at {time_str}')
+
+        else:
+            pass
+
+        if market_open_flag == False:
+            print(f'grid_handling: market is now closed, exiting thread')
+            return
+
+        
 
 
 
         # print(f'display_quote_throttle:{display_quote_throttle}')
-        # print('meic_entry loop')
+        # print('grid_handling loop')
 
         
 
@@ -703,13 +732,15 @@ def meic_entry(schwab_client):
         if display_quote_throttle % 10 == 8:
 
             if rows_with_nan_bid_ask > 0:
-                print(f'grid: At {time_str} # rows:{total_rows}, # Nan/None in bid/ask:{rows_with_nan_bid_ask}, # messages:{gbl_total_message_count}')
+                print(f'grid: # rows:{total_rows}, # Nan/None in bid/ask:{rows_with_nan_bid_ask}, # messages:{gbl_total_message_count} at {time_str} ')
                 no_none_nan_flag = False
 
             else:
-                if no_none_nan_flag == False:
-                    print(f'grid: At {time_str} all bid and ask now have quoted values')
-                    no_none_nan_flag = True
+                num_rows = len(quote_df)
+                if num_rows > 20:
+                    if no_none_nan_flag == False:
+                        print(f'grid: ++++++ All bid and ask now have quoted values at {time_str} ++++++')
+                        no_none_nan_flag = True
 
             if total_reported_rows < total_rows:
                 print(f'grid: A new high for total rows:{total_rows} at {time_str}')
@@ -787,7 +818,7 @@ def meic_entry(schwab_client):
 
 
 def is_market_open():
-    # global gbl_market_open_flag
+    global market_open_flag
 
     now = datetime.now(timezone.utc)
     # print(f'934 now type:{type(now)}, value:{now}')
@@ -823,14 +854,12 @@ def is_market_open():
  
 
     if weekday_flag == False or current_time < start_time or current_time > end_time:
-        # print(f'Market is not open.  Current day of week: {weekday_name}.  Current eastern time: {eastern_time_str}')
-        # gbl_market_open_flag = False
         return False
     
     # print(f'Market IS open.  Current day of week: {weekday_name}.  Current eastern time: {eastern_time_str}')
     
 
-    # gbl_market_open_flag = True
+    # market_open_flag = True
 
     return True
 
@@ -840,17 +869,19 @@ def wait_for_market_to_open():
     market_open_flag = False
 
     throttle_wait_display = 0
-    print(f'grid: starting wait for market to open')
+    # print(f'grid: checking market hours')
 
     while True:
-        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset=0)
-        # market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset= -228)
+
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=2, close_offset=0)
+        # market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=-599, close_offset=-844)
+
         if market_open_flag:
             break
 
         throttle_wait_display += 1
         # print(f'throttle_wait_display: {throttle_wait_display}')
-        if throttle_wait_display % 3 == 2:
+        if throttle_wait_display % 6 == 1:
             current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
             current_eastern_day = current_eastern_time.strftime('%A')
 
@@ -868,13 +899,13 @@ def wait_for_market_to_open():
         time.sleep(10)
 
 
-
-
-# Main function to set up MQTT client and start the processing thread
-def main():
+def grid_loop():
     global mqtt_client
     global market_open_flag
-
+    global quote_df
+    global schwab_client
+    
+    
     while True:
 
 
@@ -913,12 +944,12 @@ def main():
         processing_thread.daemon = True  # Daemonize thread to exit with the main program
         processing_thread.start()
 
-        # Start the meic_entry thread
-        # meic_entry_thread = threading.Thread(target=meic_entry, name="meic_entry")
-        meic_entry_thread = threading.Thread(target=meic_entry, name="meic_entry", args=(schwab_client,))
+        # Start the grid_handling thread
+        # grid_handling_thread = threading.Thread(target=grid_handling, name="grid_handling")
+        grid_handling_thread = threading.Thread(target=grid_handling, name="grid_handling", args=(schwab_client,))
 
-        meic_entry_thread.daemon = True  # Daemonize thread to exit with the main program
-        meic_entry_thread.start()
+        grid_handling_thread.daemon = True  # Daemonize thread to exit with the main program
+        grid_handling_thread.start()
 
         # Start the MQTT client loop (handles reconnects and message callbacks)
         # mqtt_client.loop_forever()
@@ -927,10 +958,14 @@ def main():
         while True:
             mqtt_client.loop(timeout=10.0)  # process network traffic, with a 1-second timeout
             # time.sleep(10) 
-            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset=0)
-            # market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset= -228)
+
+            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=2, close_offset=0)
+            # market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=-599, close_offset=-844)
+
             if market_open_flag == False:
                 break
+
+        print(f'grid_loop: market is now closed, shutting down')
 
 
         mqtt_client.disconnect()
@@ -942,6 +977,10 @@ def main():
         processing_thread.join()
         print(f'grid:processing_thread has finished')
 
+        print(f'grid: waiting for grid_handling_thread to finish')
+        grid_handling_thread.join()
+        print(f'grid:grid_handling_thread has finished')
+
         print(f'grid: restarting main loop')
 
         
@@ -951,8 +990,113 @@ def main():
 
 
 
+
+
+
+
+        pass
+
+
+
+
+# Main function to set up MQTT client and start the processing thread
+def main():
+    global mqtt_client
+    global market_open_flag
+    global quote_df
+    global time_since_last_quereied 
+    global time_since_last_stream
+
+    with quote_df_lock:
+        # Create the quote_df dataframe and initialize the columns
+        quote_df = pd.DataFrame(columns=['symbol', 'bid', 'bid_time', 'ask', 'ask_time', 'last', 'last_time'])
+        pass
+
+    while True:
+
+
+        wait_for_market_to_open()
+
+        print(f'grid: market is open')
+
+        time_since_last_quereied = 0
+        time_since_last_stream = 0
+
+        grid_loop()
+
+
+        # # Initialize MQTT client
+        # mqtt_client = mqtt.Client()
+        # # mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+
+        # # Assign callback functions
+        # mqtt_client.on_connect = on_connect
+        # mqtt_client.on_message = on_message
+
+        # # Connect to the MQTT broker
+        # print("Connecting to MQTT broker...")
+        # mqtt_client.connect(BROKER_ADDRESS)
+
+        # app_key, secret_key, my_tokens_file = load_env_variables()
+
+        # # create schwabdev client
+        # schwab_client = schwabdev.Client(app_key, secret_key, tokens_file=my_tokens_file)
+
+
+        # # Start the keyboard thread
+        # # keboard_thread = threading.Thread(target=keyboard_handler_task, name="keyboard_handler_task")
+        # # keboard_thread.daemon = True  # Daemonize thread to exit with the main program
+        # # keboard_thread.start()
+
+
+
+        # # Start the message processing thread
+        # processing_thread = threading.Thread(target=process_message, name="process_message")
+        # processing_thread.daemon = True  # Daemonize thread to exit with the main program
+        # processing_thread.start()
+
+        # # Start the grid_handling thread
+        # # grid_handling_thread = threading.Thread(target=grid_handling, name="grid_handling")
+        # grid_handling_thread = threading.Thread(target=grid_handling, name="grid_handling", args=(schwab_client,))
+
+        # grid_handling_thread.daemon = True  # Daemonize thread to exit with the main program
+        # grid_handling_thread.start()
+
+        # # Start the MQTT client loop (handles reconnects and message callbacks)
+        # # mqtt_client.loop_forever()
+
+        # # loop while market is open
+        # while True:
+        #     mqtt_client.loop(timeout=10.0)  # process network traffic, with a 1-second timeout
+        #     # time.sleep(10) 
+        #     market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset=0)
+        #     # market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset= -228)
+            
+        #     if market_open_flag == False:
+        #         break
+
+
+        # mqtt_client.disconnect()
+        # mqtt_client.loop_stop()
+
+
+
+        # print(f'grid: waiting for processing_thread to finish')
+        # processing_thread.join()
+        # print(f'grid:processing_thread has finished')
+
+        # print(f'grid: waiting for grid_handling_thread to finish')
+        # grid_handling_thread.join()
+        # print(f'grid:grid_handling_thread has finished')
+
+        # print(f'grid: restarting main loop')
+
+        
+
+
 # Entry point of the program
 if __name__ == "__main__":
-    print(f'grid: calling main')
+    # print(f'grid: calling main')
+    print(f'grid: startup')
     main()
-    print(f'chain: returned from main')
+    print(f'grid: returned from main, exiting')
