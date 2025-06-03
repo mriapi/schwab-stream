@@ -1,18 +1,21 @@
 import json
 import threading
 import pandas as pd
-import schwabdev
+# import schwabdev
 from dotenv import load_dotenv
 import os
 import time
 from datetime import datetime, timezone, timedelta
 import pytz
+import requests
 # import positions
-
+import mri_schwab_lib
+from tabulate import tabulate
 import json
 
 print()
 
+account_hash = None
 
 use_back_data = False
 
@@ -25,9 +28,9 @@ full_account_filespec = backdata_directory + "\\" + account_details_file
 full_orders_filespec = backdata_directory +  "\\" + orders_file
 full_transactions_filespec = backdata_directory +  "\\" + transactions_file
 
-print(f'full_account_filespec:<{full_account_filespec}>')
-print(f'full_orders_filespec:<{full_orders_filespec}>')
-print(f'full_transactions_filespec:<{full_transactions_filespec}>')
+# print(f'full_account_filespec:<{full_account_filespec}>')
+# print(f'full_orders_filespec:<{full_orders_filespec}>')
+# print(f'full_transactions_filespec:<{full_transactions_filespec}>')
 
 
 
@@ -44,6 +47,8 @@ def get_dash_dated_desination_dir():
     os.makedirs(full_dir, exist_ok=True)
 
     return full_dir
+
+
 
 def post_dash_data(new_post):
     """
@@ -172,6 +177,7 @@ def short_options():
     except Exception as e:
         print(f"Error in short_options: {e}")
         return []
+
 
 def long_options():
     """
@@ -345,8 +351,8 @@ def show_account(account_details):
             
             print(f"Symbol: {symbol}")
             print(f"  Qty: {position_qty_str}")
-            # print(f"  Short Quantity: {short_quantity}")
-            # print(f"  Long Quantity: {long_quantity}")
+            print(f"  Short Quantity: {short_quantity}")
+            print(f"  Long Quantity: {long_quantity}")
             print(f"  Average Price: ${average_price}")
             print(f"  Market Value: ${market_value_per_share:.3f}")
             # print(f"  Current Day Cost: ${current_day_cost}")
@@ -575,237 +581,82 @@ def show_transactions(transactions):
 
 
 
+def display_nested_list(data, indent=0):
+    """ Recursively prints a nested list or dictionary in a structured, human-readable format. """
+    prefix = " " * indent  # Indentation for readability
 
+    if isinstance(data, list):
+        for index, item in enumerate(data):
+            print(f"{prefix}- [Item {index}]")
+            display_nested_list(item, indent + 4)  # Indent sub-items
+    elif isinstance(data, dict):
+        for key, value in data.items():
+            print(f"{prefix}{key}:")
+            display_nested_list(value, indent + 4)  # Indent sub-keys
+    else:
+        print(f"{prefix}{data}")  # Print primitive values
 
-def get_positions3():
-    # Check for the 'positions' key
 
-    long_positions = []
-    short_positions = []
-    get_positions_success_flag = False
 
-    app_key, secret_key, my_tokens_file = load_env_variables()
+def show_positions(positions):
+    """ Displays positions in a tabular format with symbol and quantity. """
+    table_data = [[pos["symbol"], pos["quantity"]] for pos in positions]
+    print(tabulate(table_data, headers=["Symbol", "Qty"], tablefmt="grid"))
 
-    retry_limit = 5
 
-    while True:
 
-        # try:
 
-        client = schwabdev.Client(app_key, secret_key, tokens_file=my_tokens_file)
-        linked_accounts = client.account_linked().json()
-        # print(f'linked_accounts type:{type(linked_accounts)}, data:\n{linked_accounts}\n')
+now_time = datetime.now()
+current_time_str = now_time.strftime('%m/%d/%y %H:%M:%S')
 
-        account_hash = linked_accounts[0].get('hashValue')
-        # print(f'account_hash type:{type(account_hash)}, data:\n{account_hash}\n')
+print(f'dashboard start at {current_time_str} Pacific Time')
 
+start_of_date_dt = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) # today
+# start_of_date_dt = datetime.now(timezone.utc) - timedelta(days=1) # yesterday
+end_of_date_dt = datetime.now(timezone.utc)
 
+# get_positions_success_flag, short_positions, long_positions = get_positions3()
 
 
-        if use_back_data == True:
+account_number, account_hash = mri_schwab_lib.get_account()
+access_token = mri_schwab_lib.get_access_token()
+short_positions, long_positions = mri_schwab_lib.get_positions()
+my_orders = mri_schwab_lib.get_orders(start_of_date_dt, end_of_date_dt)
+my_transactions = mri_schwab_lib.get_transactions(start_of_date_dt, end_of_date_dt)
 
-            account_details = load_dict_from_json_file(full_account_filespec)
+# display_nested_list(my_orders)
+# display_nested_list(my_transactions)
 
-            
-            info_str = f'\naccount/positions data using backdata file:{full_account_filespec}'
-            print(info_str)
-            post_dash_data(info_str)
+if len(my_orders) > 0:
+    show_orders(my_orders)
+else:
+    print("\nNo orders")
 
-            show_account(account_details)
-            info_str = f'end of account/positions data\n'
-            print(info_str)
-            post_dash_data(info_str)
+if len(my_transactions) > 0:
+    show_transactions(my_transactions)
+else:
+    print("\nNo transactions")
 
 
+print(f'\naccount_number:{account_number}')
+print(f'\naccount_hash:{account_hash}')
 
-            my_orders = load_list_from_json_file(full_orders_filespec)
-            info_str = f'orders data using backdata file:{full_orders_filespec}'
-            print(info_str)
-            post_dash_data(info_str)
-            show_orders(my_orders)
-            info_str = f'end of orders data\n'
-            post_dash_data(info_str)
+print(f'\nshort_positions type:{type(short_positions)}, data:{short_positions}')
+print(f'\nshort_positions:')
+show_positions(short_positions)
 
-            my_transactions = load_dict_from_json_file(full_transactions_filespec)
+print(f'\nlong_positions type:{type(long_positions)}, data:{long_positions}')
+print(f'\nlong_positions:')
+show_positions(long_positions)
 
-            info_str = f'\nTransaction data using backdata file:{full_transactions_filespec}'
-            print(info_str)
-            post_dash_data(info_str)
 
-            show_transactions(my_transactions)
-            info_str = f'End of transaction data\n'
-            print(info_str)
-            post_dash_data(info_str)
+account_details = mri_schwab_lib.get_account_details()
+show_account(account_details)
 
-        
 
-            break
 
 
 
-
-
-
-
-
-
-        now_time = datetime.now()
-        # current_time_str = now_time.strftime('%Y%M%d_%H%M%S')
-        current_time_str = now_time.strftime("%y%m%d_%H%M%S")
-
-        
-
-
-
-
-
-
-
-
-
-        my_transactions = client.transactions(account_hash, 
-            datetime.now(timezone.utc) - timedelta(days=1),
-            datetime.now(timezone.utc), 
-            "TRADE").json()
-        
-
-        info_str = f'\ntransaction data:'
-        print(info_str)
-        post_dash_data(info_str)
-
-        show_transactions(my_transactions)
-
-        info_str = f'End of transaction data\n'
-        print(info_str)
-        post_dash_data(info_str)
-
-
-        
-        filename_str = f'test_transactions_{current_time_str}.json'
-
-        save_dict_to_json_file(my_transactions, filename_str)
-
-        
-
-        my_orders = client.account_orders(account_hash, 
-            datetime.now(timezone.utc) - timedelta(days=1), 
-            datetime.now(timezone.utc)).json()
-        
-        info_str = f'\norders data:'
-        print(info_str)
-        post_dash_data(info_str)
-
-        show_orders(my_orders)
-        info_str = f'\nend of orders data\n'
-        print(info_str)
-        post_dash_data(info_str)
-        
-        
-        # print(f'my_orders type:{type(my_orders)}, data:{my_orders}')
-
-        # my_orders_dict = convert_list_to_dict(my_orders)
-
-        filename_str = f'test_orders_list_{current_time_str}.json'
-        save_list_to_json_file(my_orders, filename_str)
-
-
-
-
-        account_details = client.account_details(account_hash, fields="positions").json()
-
-        filename_str = f'test_account_details_{current_time_str}.json'
-        save_dict_to_json_file(account_details, filename_str)
-        
-        info_str = f'\naccount/positions data:'
-        print(info_str)
-        post_dash_data(info_str)
-
-        show_account(account_details)
-
-        info_str = f'End of account/positions data\n'
-        print(info_str)
-        post_dash_data(info_str)
-
-    
-            
-        # except Exception as e:
-        #     print(f"get_positions3() 6, An error occurred: {e}, exiting positions processing")
-        #     retry_limit -= 1
-        #     if retry_limit > 0:
-        #         time.sleep(0.1)
-        #         continue
-        #     else:
-        #         get_positions_success_flag = False
-        #         return get_positions_success_flag, short_positions, long_positions
-
-
-
-        get_positions_success_flag = True
-
-        break
-
-        
-    try:
-
-        if 'pfcbFlag' not in account_details['securitiesAccount']:
-            # Handle the case where 'positions' key is not present
-            print("No pfcbFlag in account data. aborting get_positions()")
-            get_positions_success_flag = False
-            return get_positions_success_flag, short_positions, long_positions
-        
-    except Exception as e:
-        print(f"get_positions2() 7, An error occurred: {e}, exiting positions processing")
-        get_positions_success_flag = False
-        return get_positions_success_flag, short_positions, long_positions
-    
-
-    try:
-    
-
-        if 'positions' in account_details['securitiesAccount']:
-            my_positions = account_details['securitiesAccount']['positions']
-
-            update_positions(my_positions)
-
-            short_positions = short_options()
-            long_positions = long_options()
-
-
-            return get_positions_success_flag, short_positions, long_positions
-
-
-        else:
-            # Handle the case where 'positions' key is not present
-            print("No positions in account data, resetting positions table")
-            reset_positions()
-            return get_positions_success_flag, short_positions, long_positions
-
-    except Exception as e:
-            print(f"get_positions2() 8, An error occurred: {e}, exiting positions processing")
-            get_positions_success_flag = False
-            return get_positions_success_flag, short_positions, long_positions
-    
-
-
-    
-
-
-
-while True:
-
-    now_time = datetime.now()
-    current_time_str = now_time.strftime('%H:%M:%S')
-
-    get_positions_success_flag, short_positions, long_positions = get_positions3()
-
-    print()
-    print(f'time:{current_time_str}, get_positions_success_flag:{get_positions_success_flag}')
-    print(f'short_positions type:{type(short_positions)}, data:\n{short_positions}')
-    print(f'long_positions type:{type(long_positions)}, data:\n{long_positions}')
-    print()
-
-
-    time.sleep(300)
 
 
 

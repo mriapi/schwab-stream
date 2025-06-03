@@ -31,6 +31,7 @@ optimal_net_credit = recommend_config.OPTIMAL_NET_CREDIT   # optimal credit
 max_long_val = recommend_config.MAX_LONG_VAL       # max ask value for long leg
 min_long_val = recommend_config.MIN_LONG_VAL       # min ask value for long leg
 min_short_to_spx = recommend_config.MIN_SHORT_TO_SPX   # minimum offset between short strike and current SPX
+max_long_ask = recommend_config.MAX_LONG_ASK
 
 
 max_short_target = recommend_config.MAX_SHORT_TARGET
@@ -126,6 +127,32 @@ def display_syms_only(option_list):
 
     except KeyError as e:
         print(f"KeyError: Missing key {e}. Exiting function.")
+        return
+    except Exception as e:
+        print(f"An error occurred: {e}. Exiting function.")
+        print(f'option_list type:{type(option_list)}, data:\n{option_list}')
+        return
+    
+
+def display_first_last_syms(option_list):
+    try:
+        if not option_list:
+            print("The option list is empty. Exiting function.")
+            return
+
+        # Display the first item's symbol
+        first_symbol = option_list[0]['symbol']
+        print(f"First Symbol: {first_symbol}")
+
+        # Display the last item's symbol
+        last_symbol = option_list[-1]['symbol']
+        print(f"Last Symbol: {last_symbol}")
+
+    except KeyError as e:
+        print(f"KeyError: Missing key {e}. Exiting function.")
+        return
+    except IndexError as e:
+        print(f"IndexError: Invalid list index {e}. Exiting function.")
         return
     except Exception as e:
         print(f"An error occurred: {e}. Exiting function.")
@@ -277,15 +304,21 @@ def pick_legs(option_list, short_positions, long_positions, spx_price, option_ty
             # otm_list = [opt for opt in option_list if opt.get('STRIKE') and opt['STRIKE'] > (spx_price + 2)]
             otm_list = [opt for opt in option_list if opt.get('STRIKE') and opt['STRIKE'] > (spx_price + min_short_to_spx)]
             short_otm_list = [item for item in otm_list if item['symbol'] not in long_call_positions]
-            # print(f'320 call short_otm_list:')
-            # display_sym_bid_ask(short_otm_list)
+
+            if DEBUG_PICK_LEGS == True:
+                pass
+                # print(f'320 call short_otm_list:')
+                # display_sym_bid_ask(short_otm_list)
             
 
             last_call_short_list = short_otm_list
 
             long_otm_list = [item for item in otm_list if item['symbol'] not in short_call_positions]
-            # print(f'330 call long_otm_list:')
-            # display_sym_bid_ask(long_otm_list)
+
+            if DEBUG_PICK_LEGS == True:
+                pass
+                # print(f'330 call long_otm_list:')
+                # display_sym_bid_ask(long_otm_list)
 
             last_call_long_list = long_otm_list
 
@@ -293,14 +326,21 @@ def pick_legs(option_list, short_positions, long_positions, spx_price, option_ty
             # otm_list = [opt for opt in option_list if opt.get('STRIKE') and opt['STRIKE'] < (spx_price - 2)]
             otm_list = [opt for opt in option_list if opt.get('STRIKE') and opt['STRIKE'] < (spx_price - min_short_to_spx)]
             short_otm_list = [item for item in otm_list if item['symbol'] not in long_put_positions]
-            # print(f'340 put short_otm_list:')
-            # display_sym_bid_ask(short_otm_list)
+
+            if DEBUG_PICK_LEGS == True:
+                pass
+                print(f'340 put short_otm_list:')
+                display_sym_bid_ask(short_otm_list)
+                print(short_otm_list)
 
             last_put_short_list = short_otm_list
 
             long_otm_list = [item for item in otm_list if item['symbol'] not in short_put_positions]
-            # print(f'350 put long_otm_list:')
-            # display_sym_bid_ask(long_otm_list)
+
+            if DEBUG_PICK_LEGS == True:
+                pass
+                # print(f'350 put long_otm_list:')
+                # display_sym_bid_ask(long_otm_list)
 
             last_put_long_list = long_otm_list
 
@@ -327,7 +367,9 @@ def pick_legs(option_list, short_positions, long_positions, spx_price, option_ty
         # short_leg = min(otm_list, key=lambda opt: abs(opt.get('bid', float('inf')) - 2.00))
         # Select the short_leg based on the bid closest to my_short_target
         short_leg = min(short_otm_list, key=lambda opt: abs(opt.get('bid', float('inf')) - my_short_target))
-        # print(f'Short Leg Selected.  short_leg type:{type(short_leg)},\n  data:<{short_leg}>')
+
+        if DEBUG_PICK_LEGS == True:
+            print(f'Short Leg Selected.  short_leg type:{type(short_leg)},\n  data:<{short_leg}>')
 
         if not short_leg:
             print("No valid short_leg found")
@@ -394,7 +436,8 @@ def pick_legs(option_list, short_positions, long_positions, spx_price, option_ty
         else:
             long_leg = []  # If no valid bids are found, return an empty list
 
-        # print(f'Long Leg Selected.  long_leg type:{type(long_leg)},\n  data:<{long_leg}>')
+        if DEBUG_PICK_LEGS == True:
+            print(f'Long Leg Selected.  long_leg type:{type(long_leg)},\n  data:<{long_leg}>')
 
         if not long_leg:
             # print("No valid long_leg found with bid >= 0.05")
@@ -718,9 +761,11 @@ def ten_max(option_list, short_positions, long_positions, spx_price, option_type
         short_leg_list.append(short_leg)
         long_leg_list.append(long_leg)
         net_list.append(new_net)
+
+
         
 
-    # # Print the short_leg and long_leg lists
+    # Print the short_leg and long_leg lists
     # print(f"short leg list:\n{short_leg_list}")
     # print(f"long leg list:\n{long_leg_list}")
     # print(f'my_short_target:{my_short_target}\nNets:{net_list}')
@@ -842,6 +887,219 @@ def calculate_atm_straddle_value(chain):
 #[['Short Strike', 'Long Strike', 'Short Bid', 'Long Ask', 'Net Credit', 'SPX Offset', 'Spread Width'], [6030.0, 5980.0, 1.6, 0.1, 1.5, 10.1899999999996, 50.0]]
     
 
+
+# def find_best_credit_spread(option_list, atm_straddle, spx_last_fl, type):
+#     best_pair = None
+#     closest_diff = float('inf')  # To track the closest net credit difference
+#     lowest_ask = float('inf')  # To track the lowest "ask" value for the long option
+
+#     my_short_target = calc_short_target(atm_straddle)
+
+#     # Iterate through all possible pairs of options
+#     for short_option in option_list:
+#         for long_option in option_list:
+
+
+#             if (long_option['bid'] > (2 * my_short_target)) or (short_option['bid'] > (2 * my_short_target)):
+#                 continue
+
+
+#             strike_diff = abs(short_option['STRIKE'] - long_option['STRIKE'])
+            
+#             # Check the strike difference criteria
+#             if 10 <= strike_diff <= 50:
+#                 net_credit = long_option['bid'] - short_option['ask']
+#                 credit_diff = abs(net_credit - my_short_target)
+
+#                 # Check if this pair is better (closer net credit or lower long ask)
+#                 if credit_diff < closest_diff or (credit_diff == closest_diff and long_option['ask'] < lowest_ask):
+#                     closest_diff = credit_diff
+#                     lowest_ask = long_option['ask']
+#                     best_pair = (long_option, short_option)
+
+#     temp_long_option, temp_short_option = best_pair
+#     print(f'194 type:{type}')
+#     print(f'294 temp_long_option:{temp_long_option}')
+#     print(f'394 temp_short_option:{temp_short_option}')
+
+#     return best_pair
+
+
+
+
+
+# RANGE_PERCENT = 0.1
+# RANGE_PERCENT = 0.15
+RANGE_PERCENT = 0.20
+# RANGE_PERCENT = 0.30
+
+
+def find_best_credit_spread(credit_target, option_list, short_position_list, long_position_list, atm_straddle, spx_last_fl, opt_type):
+    global max_long_ask  # Ensure the global variable is accessible within the function
+
+
+    # print(f'find_best_credit_spread()')
+    # print(f'option_list type:{type(option_list)}, data:\n{option_list}')
+    # print(f'short_position_list type:{type(short_position_list)}, data:\n{short_position_list}')
+    # print(f'long_position_list type:{type(long_position_list)}, data:\n{long_position_list}')
+
+    best_pair = None
+    closest_diff = float('inf')  # To track the closest net credit difference
+    lowest_ask = float('inf')  # To track the lowest "ask" value for the long option
+
+    # print(f'\nfind best opt_type:{opt_type}')
+
+    # if not short_position_list:
+    #     print(f'in find_best, no existing short positions')
+    # else:
+    #     print(f'in find_best, short_position_list:\n{short_position_list}')
+
+
+    # if not long_position_list:
+    #     print(f'in find_best, no existing long positions')
+    # else:
+    #     print(f'in find_best, long_position_list:{long_position_list}')
+
+
+    
+
+    # Iterate through all possible pairs of options
+    for short_option in option_list:
+        short_opt_sym = short_option['symbol']
+        short_opt_bid = short_option['bid']
+
+        # print(f'considering short {short_opt_sym} at bid {short_opt_bid}')
+
+
+
+        for long_option in option_list:
+            long_opt_sym = long_option['symbol']
+            long_opt_ask = long_option['ask']
+            # print(f'considering long {long_opt_sym} at ask {long_opt_ask}')
+            
+
+
+            # Ensure short_option['bid'] and long_option['ask'] are valid for comparison
+            if (long_option['bid'] > (1.8 * credit_target)) or (short_option['bid'] > (1.8 * credit_target)):
+                # print(f'1 rejecting {short_opt_sym}/{long_opt_sym}')
+                continue
+
+
+            
+            # # Check if long_option['ask'] is not higher than max_long_ask
+            # if long_option['ask'] > max_long_ask:
+            #     continue
+
+
+            # print(f'935 short_option type:{type(short_option)} data:{short_option}, long_option type:{type(long_option)},  data:{long_option}')
+
+            
+            long_opt_sym = long_option['symbol']
+
+            # don't consider short or long legs that would cancel out existing positions
+
+            if short_opt_sym in long_position_list:
+                # print(f'short_option {short_opt_sym} is in long_positions_list')
+                # print(f'2 rejecting {short_opt_sym}/{long_opt_sym}')
+                continue
+
+            if long_opt_sym in short_position_list:
+                # print(f'long_option {long_opt_sym} is in short_positions_list')
+                # print(f'3 rejecting {short_opt_sym}/{long_opt_sym}')
+                continue
+
+
+            
+            
+            
+            strike_diff = abs(short_option['STRIKE'] - long_option['STRIKE'])
+            
+            # Check the strike difference criteria
+            if 15 <= strike_diff <= 50:
+                # Calculate net credit
+                net_credit = short_option['bid'] - long_option['ask']
+
+                if net_credit < (credit_target * 0.5):
+                    # print(f'4 rejecting {short_opt_sym}/{long_opt_sym}')
+                    continue
+
+                if net_credit > (credit_target * 1.5):
+                    # print(f'5 rejecting {short_opt_sym}/{long_opt_sym}')
+                    continue
+
+
+                credit_diff = abs(net_credit - credit_target)
+
+                # Check if the pair meets the range rule (within a certain percent of the target credit)
+                within_range = credit_diff <= (RANGE_PERCENT * credit_target)
+
+                # Determine if this is the best pair based on credit_diff and lowest_ask
+                # if (credit_diff < closest_diff or 
+                #     (within_range and credit_diff == closest_diff and long_option['ask'] < lowest_ask)):
+
+                # Select the pair with the lowest 'ask' price, provided it's within range
+                if within_range and (long_option['ask'] < lowest_ask or lowest_ask is None):
+
+
+
+
+
+                    closest_diff = credit_diff
+                    lowest_ask = long_option['ask']
+
+
+
+
+
+                    # # display replaced best candidates
+                    # if best_pair != None:
+                    #     t_strike_diff = abs(best_pair[0]['STRIKE'] - best_pair[1]['STRIKE'])
+                    #     t_short_strike = best_pair[0]['STRIKE']
+                    #     t_long_strike = best_pair[1]['STRIKE']
+                    #     t_short_bid = best_pair[0]['bid']
+                    #     t_long_ask = best_pair[1]['ask']
+                    #     t_nc = best_pair[0]['bid'] - best_pair[1]['ask']
+                    #     print(f'\nreplacing previous best {opt_type} {t_short_strike}/{t_long_strike} {t_short_bid:.2f}/{t_long_ask:.2f} nc:{t_nc:.2f}')
+
+
+                    # print(f'\n10 replacing existing best pair:')
+                    if best_pair == None:
+                        # print(f'035 None')
+                        pass
+                    else:
+                        # display_short_option, display_long_option = best_pair
+                        # print(f"036 old Short Option type:{type(display_short_option)}, value:{display_short_option}")
+                        # print(f"037 old Long Option type:{type(display_long_option)}, value:{display_long_option}")
+                        pass
+
+                    best_pair = (short_option, long_option)  # Assign the two legs to the current best_pain
+                    
+                    # print(f'\n11 with new best pair:{best_pair}')
+                    display_short_option, display_long_option = best_pair
+                    # print(f"046 new Short Option type:{type(display_short_option)}, value:{display_short_option}")
+                    # print(f"047 new Long Option type:{type(display_long_option)}, value:{display_long_option}")
+
+
+                else:
+                    # print(f'057 {short_opt_sym}/{long_opt_sym} qualifies, but not best')
+                    pass
+
+    if best_pair is not None:
+        pass
+        # Unpack the correctly assigned best pair
+        temp_short_option, temp_long_option = best_pair
+        # print(f'194 type:{type}')
+        # print(f'294 temp_long_option:{temp_long_option}')
+        # print(f'394 temp_short_option:{temp_short_option}')
+    else:
+        pass
+        # print("No suitable pair found.")
+
+    return best_pair
+
+
+
+
 def generate_recommendation(short_position_list, long_position_list, grid):
 
 
@@ -849,6 +1107,12 @@ def generate_recommendation(short_position_list, long_position_list, grid):
     my_call_long = []
     my_put_short = []
     my_put_long = []
+    
+    best_call_short_list = []
+    best_call_long_list = []
+    best_put_short_list = []
+    best_put_long_list = []
+
     spx_last_fl = None
     atm_straddle_fl = None
     call_target = None
@@ -858,6 +1122,12 @@ def generate_recommendation(short_position_list, long_position_list, grid):
     # print(f'grid type:{type(grid)}, data:\n{grid}')
 
     atm_straddle_value = calculate_atm_straddle_value(grid)
+
+    if (atm_straddle_value == None) or atm_straddle_value < 1:
+        return my_call_short, my_call_long, my_put_short, my_put_long, spx_last_fl, atm_straddle_fl, call_target
+
+
+    net_credit_target = calc_short_target(atm_straddle_value)
     
     if atm_straddle_value == None:
         print(f'unable to calculate the ATM straddle')
@@ -944,6 +1214,10 @@ def generate_recommendation(short_position_list, long_position_list, grid):
 
                 # print(f'adding item <{item}> to put_list')
                 put_list.append(item)
+
+
+
+
             
             # Check for call options and valid bid/ask
             if 'C0' in item['symbol'] and is_valid(item['bid']) and is_valid(item['ask']):
@@ -956,9 +1230,86 @@ def generate_recommendation(short_position_list, long_position_list, grid):
 
 
 
+            
+    # print("first/last puts")
+    # display_first_last_syms(put_list)
+
+
+    # print("first/last calls")
+    # display_first_last_syms(call_list)
+
+
+
  
 
     if spx_last_fl != None:
+
+
+
+
+        print(f'Target credit:{net_credit_target:.2f} for ATM straddle:{atm_straddle_value:.2f}')
+
+        best_call_pair = find_best_credit_spread(net_credit_target, call_list,  short_position_list, long_position_list, atm_straddle_value, spx_last_fl, "CALL")
+        if best_call_pair:
+            # print(f"Call Best Short Option: {best_call_pair[0]['symbol']}, Bid: {best_call_pair[0]['bid']}, Ask: {best_call_pair[0]['ask']}, Strike: {best_call_pair[0]['STRIKE']}")
+            # print(f"Call Best  Long Option: {best_call_pair[1]['symbol']}, Bid: {best_call_pair[1]['bid']}, Ask: {best_call_pair[1]['ask']}, Strike: {best_call_pair[1]['STRIKE']}")
+            strike_diff = abs(best_call_pair[0]['STRIKE'] - best_call_pair[1]['STRIKE'])
+            net_credit = best_call_pair[0]['bid'] - best_call_pair[1]['ask']
+
+            best_call_short = best_call_pair[0]
+            best_call_short_list = [best_call_short]
+            best_call_long = best_call_pair[1]
+            best_call_long_list = [best_call_long]
+
+            short_sym = best_call_pair[0]['symbol']
+            short_sym_strike = get_strike_int_from_sym(short_sym)
+            short_premium = best_call_pair[0]['bid']
+
+            long_sym = best_call_pair[1]['symbol']
+            long_sym_strike = get_strike_int_from_sym(long_sym)
+            long_premium = best_call_pair[1]['ask']
+
+            # print(f'best Call net credit:{net_credit:.2f}, CALL {short_sym_strike}/{long_sym_strike}, premiums:{short_premium:.2f}/{long_premium:.2f}, width:{strike_diff}')
+
+        else:
+            # print("No suitable call pair found.")
+            pass
+
+
+        best_put_pair = find_best_credit_spread(net_credit_target, put_list,  short_position_list, long_position_list, atm_straddle_value, spx_last_fl, "PUT")
+        if best_put_pair:
+            # print(f"Put Best Short Option: {best_put_pair[0]['symbol']}, Bid: {best_put_pair[0]['bid']}, Ask: {best_put_pair[0]['ask']}, Strike: {best_put_pair[0]['STRIKE']}")
+            # print(f"Put Best  Long Option: {best_put_pair[1]['symbol']}, Bid: {best_put_pair[1]['bid']}, Ask: {best_put_pair[1]['ask']}, Strike: {best_put_pair[1]['STRIKE']}")
+            strike_diff = abs(best_put_pair[0]['STRIKE'] - best_put_pair[1]['STRIKE'])
+            net_credit = best_put_pair[0]['bid'] - best_put_pair[1]['ask']
+
+            best_put_short = best_put_pair[0]
+            best_put_short_list = [best_put_short]
+            best_put_long = best_put_pair[1]
+            best_put_long_list = [best_put_long]
+
+            short_sym = best_put_pair[0]['symbol']
+            short_sym_strike = get_strike_int_from_sym(short_sym)
+            short_premium = best_put_pair[0]['bid']
+
+            long_sym = best_put_pair[1]['symbol']
+            long_sym_strike = get_strike_int_from_sym(long_sym)
+            long_premium = best_put_pair[1]['ask']
+
+            # print(f'best  Put net credit:{net_credit:.2f},  PUT {short_sym_strike}/{long_sym_strike}, premiums:{short_premium:.2f}/{long_premium:.2f}, width:{strike_diff}')
+
+        else:
+            # print("No suitable put pair found.")
+            pass
+
+
+
+
+        print()
+
+
+
+        # best_call_pair = find_best_credit_spread(call_list, atm_straddle_value, spx_last_fl, "CALL")
 
         # print(f'\n10 call_list type:{type(call_list)}, data:\n{call_list}\n')
         # print(f'\n20 put_list type:{type(put_list)}, data:\n{put_list}\n')
@@ -1001,8 +1352,26 @@ def generate_recommendation(short_position_list, long_position_list, grid):
         print(f'094 call spx_last_fl was None')
         pass
 
+    # print(f'my_call_short        type:{type(my_call_short)}, data:\n{my_call_short}')
+    # print(f'best_call_short_list type:{type(best_call_short_list)}, data:\n{best_call_short_list}')
 
-    return my_call_short, my_call_long, my_put_short, my_put_long, spx_last_fl, atm_straddle_fl, call_target
+    # print(f'my_call_long        type:{type(my_call_long)}, data:\n{my_call_long}')
+    # print(f'best_call_long_list type:{type(best_call_long_list)}, data:\n{best_call_long_list}')
+
+    # print(f'my_put_short        type:{type(my_put_short)}, data:\n{my_put_short}')
+    # print(f'best_put_short_list type:{type(best_put_short_list)}, data:\n{best_put_short_list}')
+
+    # print(f'my_put_long        type:{type(my_put_long)}, data:\n{my_put_long}')
+    # print(f'best_put_long_list type:{type(best_put_long_list)}, data:\n{best_put_long_list}')
+
+
+
+    # return my_call_short, my_call_long, my_put_short, my_put_long, spx_last_fl, atm_straddle_fl, call_target
+
+    return best_call_short_list, best_call_long_list, best_put_short_list, best_put_long_list, spx_last_fl, atm_straddle_fl, net_credit_target
+
+
+
 
 
 
