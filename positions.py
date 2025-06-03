@@ -1,10 +1,11 @@
 import json
 import threading
 import pandas as pd
-import schwabdev
+# import schwabdev
 from dotenv import load_dotenv
 import os
 import time
+import requests
 
 client_lock = threading.Lock()
 
@@ -278,45 +279,172 @@ def get_positions2():
     
 
 
-# positions = [{'shortQuantity': 0.0, 'averagePrice': 0.1, 'currentDayProfitLoss': -10.0, 'currentDayProfitLossPercentage': -50.0, 'longQuantity': 1.0, 'settledLongQuantity': 0.0, 'settledShortQuantity': 0.0, 'instrument': {'assetType': 'OPTION', 'cusip': '0SPXW.A355995000', 'symbol': 'SPXW  250103C05995000', 'description': 'S & P 500 INDEX 01/03/2025 $5995 Call', 'netChange': -0.034, 'type': 'VANILLA', 'putCall': 'CALL', 'underlyingSymbol': '$SPX'}, 'marketValue': 10.0, 'maintenanceRequirement': 0.0, 'averageLongPrice': 0.1, 'taxLotAverageLongPrice': 0.1, 'longOpenProfitLoss': 0.0, 'previousSessionLongQuantity': 0.0, 'currentDayCost': 20.0}, {'shortQuantity': 1.0, 'averagePrice': 2.0, 'currentDayProfitLoss': -2.5, 'currentDayProfitLossPercentage': -1.25, 'longQuantity': 0.0, 'settledLongQuantity': 0.0, 'settledShortQuantity': 0.0, 'instrument': {'assetType': 'OPTION', 'cusip': '0SPXW.M355885000', 'symbol': 'SPXW  250103P05885000', 'description': 'S & P 500 INDEX 01/03/2025 $5885 Put', 'netChange': -30.6534, 'type': 'VANILLA', 'putCall': 'PUT', 'underlyingSymbol': '$SPX'}, 'marketValue': -202.5, 'maintenanceRequirement': 500.0, 'averageShortPrice': 2.0, 'taxLotAverageShortPrice': 2.0, 'shortOpenProfitLoss': -2.5, 'previousSessionShortQuantity': 0.0, 'currentDayCost': -200.0}, {'shortQuantity': 1.0, 'averagePrice': 2.5, 'currentDayProfitLoss': -7.5, 'currentDayProfitLossPercentage': -3.0, 'longQuantity': 0.0, 'settledLongQuantity': 0.0, 'settledShortQuantity': 0.0, 'instrument': {'assetType': 'OPTION', 'cusip': '0SPXW.A355950000', 'symbol': 'SPXW  250103C05950000', 'description': 'S & P 500 INDEX 01/03/2025 $5950 Call', 'netChange': 1.0929, 'type': 'VANILLA', 'putCall': 'CALL', 'underlyingSymbol': '$SPX'}, 'marketValue': -257.5, 'maintenanceRequirement': 4500.0, 'averageShortPrice': 2.5, 'taxLotAverageShortPrice': 2.5, 'shortOpenProfitLoss': -7.5, 'previousSessionShortQuantity': 0.0, 'currentDayCost': -250.0}, {'shortQuantity': 0.0, 'averagePrice': 0.35, 'currentDayProfitLoss': -2.5, 'currentDayProfitLossPercentage': -7.14, 'longQuantity': 1.0, 'settledLongQuantity': 0.0, 'settledShortQuantity': 0.0, 'instrument': {'assetType': 'OPTION', 'cusip': '0SPXW.M355835000', 'symbol': 'SPXW  250103P05835000', 'description': 'S & P 500 INDEX 01/03/2025 $5835 Put', 'netChange': -9.5, 'type': 'VANILLA', 'putCall': 'PUT', 'underlyingSymbol': '$SPX'}, 'marketValue': 32.5, 'maintenanceRequirement': 0.0, 'averageLongPrice': 0.35, 'taxLotAverageLongPrice': 0.35, 'longOpenProfitLoss': -2.5, 'previousSessionLongQuantity': 0.0, 'currentDayCost': 35.0}]
+tokens_file_path = r"C:\MEIC\cred\tokens_mri.json"
+acct_file_path = r"C:\MEIC\cred\acct_mri.json"
 
-# print(f'{positions}')
+def get_positions3():
+    # Check for the 'positions' key
 
-positions_success_flag, short_legs, long_legs = get_positions2()
-# print(f'get_possitions2():\nsuccess flag:{positions_success_flag} \nshort legs:{short_legs} \nlong legs:{long_legs}\n')
+    long_positions = []
+    short_positions = []
+    get_positions_success_flag = False
+
+    # print(f'p mri_tokens_file:{tokens_file_path}')
+
+    try:
+        # Open and read the JSON file
+        with open(tokens_file_path, "r") as f:
+            token_data = json.load(f)
+
+    except Exception as e:
+        print(f"110 positions.py Error opening file: {e}")
+        return get_positions_success_flag, short_positions, long_positions
+    
+    try:
+
+        # Extract values
+        access_token_issue_date = token_data.get("access_token_issued")
+        refresh_token_issue_date = token_data.get("refresh_token_issued")
+        token_dict = token_data.get("token_dictionary", {})
+
+        expires_time = token_dict.get("expires_in", 1800)  # Default to 1800 if missing
+        token_type = token_dict.get("token_type", "Bearer")  # Default if missing
+        scope = token_dict.get("scope", "api")  # Default if missing
+        refresh_token = token_dict.get("refresh_token")
+        access_token = token_dict.get("access_token")
+        id_token = token_dict.get("id_token")
+
+        # print(f'positons.py access_token:{access_token}')
+
+    except Exception as e:
+        print(f"120 positions.py extracting data: {e}")
+        return get_positions_success_flag, short_positions, long_positions
 
 
-# account_data1 = {'securitiesAccount': {'type': 'MARGIN', 'accountNumber': '56922081', 'roundTrips': 4, 'isDayTrader': True, 'isClosingOnlyRestricted': False, 'pfcbFlag': False, 'positions': [{'shortQuantity': 0.0, 'averagePrice': 0.1, 'currentDayProfitLoss': -10.0, 'currentDayProfitLossPercentage': -50.0, 'longQuantity': 1.0, 'settledLongQuantity': 0.0, 'settledShortQuantity': 0.0, 'instrument': {'assetType': 'OPTION', 'cusip': '0SPXW.A355995000', 'symbol': 'SPXW  250103C05995000', 'description': 'S & P 500 INDEX 01/03/2025 $5995 Call', 'netChange': -0.034, 'type': 'VANILLA', 'putCall': 'CALL', 'underlyingSymbol': '$SPX'}, 'marketValue': 10.0, 'maintenanceRequirement': 0.0, 'averageLongPrice': 0.1, 'taxLotAverageLongPrice': 0.1, 'longOpenProfitLoss': 0.0, 'previousSessionLongQuantity': 0.0, 'currentDayCost': 20.0}, {'shortQuantity': 1.0, 'averagePrice': 2.0, 'currentDayProfitLoss': -2.5, 'currentDayProfitLossPercentage': -1.25, 'longQuantity': 0.0, 'settledLongQuantity': 0.0, 'settledShortQuantity': 0.0, 'instrument': {'assetType': 'OPTION', 'cusip': '0SPXW.M355885000', 'symbol': 'SPXW  250103P05885000', 'description': 'S & P 500 INDEX 01/03/2025 $5885 Put', 'netChange': -30.6534, 'type': 'VANILLA', 'putCall': 'PUT', 'underlyingSymbol': '$SPX'}, 'marketValue': -202.5, 'maintenanceRequirement': 500.0, 'averageShortPrice': 2.0, 'taxLotAverageShortPrice': 2.0, 'shortOpenProfitLoss': -2.5, 'previousSessionShortQuantity': 0.0, 'currentDayCost': -200.0}, {'shortQuantity': 1.0, 'averagePrice': 2.5, 'currentDayProfitLoss': -7.5, 'currentDayProfitLossPercentage': -3.0, 'longQuantity': 0.0, 'settledLongQuantity': 0.0, 'settledShortQuantity': 0.0, 'instrument': {'assetType': 'OPTION', 'cusip': '0SPXW.A355950000', 'symbol': 'SPXW  250103C05950000', 'description': 'S & P 500 INDEX 01/03/2025 $5950 Call', 'netChange': 1.0929, 'type': 'VANILLA', 'putCall': 'CALL', 'underlyingSymbol': '$SPX'}, 'marketValue': -257.5, 'maintenanceRequirement': 4500.0, 'averageShortPrice': 2.5, 'taxLotAverageShortPrice': 2.5, 'shortOpenProfitLoss': -7.5, 'previousSessionShortQuantity': 0.0, 'currentDayCost': -250.0}, {'shortQuantity': 0.0, 'averagePrice': 0.35, 'currentDayProfitLoss': -2.5, 'currentDayProfitLossPercentage': -7.14, 'longQuantity': 1.0, 'settledLongQuantity': 0.0, 'settledShortQuantity': 0.0, 'instrument': {'assetType': 'OPTION', 'cusip': '0SPXW.M355835000', 'symbol': 'SPXW  250103P05835000', 'description': 'S & P 500 INDEX 01/03/2025 $5835 Put', 'netChange': -9.5, 'type': 'VANILLA', 'putCall': 'PUT', 'underlyingSymbol': '$SPX'}, 'marketValue': 32.5, 'maintenanceRequirement': 0.0, 'averageLongPrice': 0.35, 'taxLotAverageLongPrice': 0.35, 'longOpenProfitLoss': -2.5, 'previousSessionLongQuantity': 0.0, 'currentDayCost': 35.0}], 'initialBalances': {'accruedInterest': 0.0, 'availableFundsNonMarginableTrade': 56710.0, 'bondValue': 226840.44, 'buyingPower': 114170.0, 'cashBalance': 56710.11, 'cashAvailableForTrading': 0.0, 'cashReceipts': 0.0, 'dayTradingBuyingPower': 226840.0, 'dayTradingBuyingPowerCall': 0.0, 'dayTradingEquityCall': 0.0, 'equity': 56710.11, 'equityPercentage': 100.0, 'liquidationValue': 56710.11, 'longMarginValue': 0.0, 'longOptionMarketValue': 0.0, 'longStockValue': 0.0, 'maintenanceCall': 0.0, 'maintenanceRequirement': 0.0, 'margin': 56710.11, 'marginEquity': 56710.11, 'moneyMarketFund': 0.0, 'mutualFundValue': 56710.0, 'regTCall': 0.0, 'shortMarginValue': 0.0, 'shortOptionMarketValue': 0.0, 'shortStockValue': 0.0, 'totalCash': 0.0, 'isInCall': False, 'pendingDeposits': 0.0, 'marginBalance': 0.0, 'shortBalance': 0.0, 'accountValue': 56710.11}, 'currentBalances': {'accruedInterest': 0.0, 'cashBalance': 57076.01, 'cashReceipts': 0.0, 'longOptionMarketValue': 42.5, 'liquidationValue': 56658.51, 'longMarketValue': 0.0, 'moneyMarketFund': 0.0, 'savings': 0.0, 'shortMarketValue': 0.0, 'pendingDeposits': 0.0, 'mutualFundValue': 0.0, 'bondValue': 0.0, 'shortOptionMarketValue': -460.0, 'availableFunds': 52076.01, 'availableFundsNonMarginableTrade': 52076.01, 'buyingPower': 104901.8, 'buyingPowerNonMarginableTrade': 51817.29, 'dayTradingBuyingPower': 189408.48, 'equity': 57076.01, 'equityPercentage': 100.0, 'longMarginValue': 0.0, 'maintenanceCall': 0.0, 'maintenanceRequirement': 5000.0, 'marginBalance': 0.0, 'regTCall': 0.0, 'shortBalance': 0.0, 'shortMarginValue': 0.0, 'sma': 52450.9}, 'projectedBalances': {'availableFunds': 51817.29, 'availableFundsNonMarginableTrade': 51817.29, 'buyingPower': 104384.36, 'dayTradingBuyingPower': 188373.6, 'dayTradingBuyingPowerCall': 0.0, 'maintenanceCall': 0.0, 'regTCall': 0.0, 'isInCall': False, 'stockBuyingPower': 104384.36}}, 'aggregatedBalance': {'currentLiquidationValue': 56658.51, 'liquidationValue': 56657.29}}
-
-# longs = []
-# shorts = []
-# get_positions(account_data1)
-# if len(positions_df) > 0:
-#     print(f'1 positions_df:\n{positions_df}')
-#     longs = long_options()
-#     shorts = short_options()
-#     print(f'1 longs:\n{longs}')
-#     print(f'1 shorts:\n{shorts}')
-# else:
-#     print(f'1 positions_df is empty')
 
 
-# account_data2 = {'securitiesAccount': 
-#     {'type': 'MARGIN', 'accountNumber': '56922081', 'roundTrips': 4, 'isDayTrader': True, 'isClosingOnlyRestricted': False, 'pfcbFlag': False,
-#     'initialBalances': {'accruedInterest': 0.0, 'availableFundsNonMarginableTrade': 56710.0, 'bondValue': 226840.44, 'buyingPower': 114170.0, 'cashBalance': 56710.11, 'cashAvailableForTrading': 0.0, 'cashReceipts': 0.0, 'dayTradingBuyingPower': 226840.0, 'dayTradingBuyingPowerCall': 0.0, 'dayTradingEquityCall': 0.0, 'equity': 56710.11, 'equityPercentage': 100.0, 'liquidationValue': 56710.11, 'longMarginValue': 0.0, 'longOptionMarketValue': 0.0, 'longStockValue': 0.0, 'maintenanceCall': 0.0, 'maintenanceRequirement': 0.0, 'margin': 56710.11, 'marginEquity': 56710.11, 'moneyMarketFund': 0.0, 'mutualFundValue': 56710.0, 'regTCall': 0.0, 'shortMarginValue': 0.0, 'shortOptionMarketValue': 0.0, 'shortStockValue': 0.0, 'totalCash': 0.0, 'isInCall': False, 'pendingDeposits': 0.0, 'marginBalance': 0.0, 'shortBalance': 0.0, 'accountValue': 56710.11}, 'currentBalances': {'accruedInterest': 0.0, 'cashBalance': 57076.01, 'cashReceipts': 0.0, 'longOptionMarketValue': 42.5, 'liquidationValue': 56658.51, 'longMarketValue': 0.0, 'moneyMarketFund': 0.0, 'savings': 0.0, 'shortMarketValue': 0.0, 'pendingDeposits': 0.0, 'mutualFundValue': 0.0, 'bondValue': 0.0, 'shortOptionMarketValue': -460.0, 'availableFunds': 52076.01, 'availableFundsNonMarginableTrade': 52076.01, 'buyingPower': 104901.8, 'buyingPowerNonMarginableTrade': 51817.29, 'dayTradingBuyingPower': 189408.48, 'equity': 57076.01, 'equityPercentage': 100.0, 'longMarginValue': 0.0, 'maintenanceCall': 0.0, 'maintenanceRequirement': 5000.0, 'marginBalance': 0.0, 'regTCall': 0.0, 'shortBalance': 0.0, 'shortMarginValue': 0.0, 'sma': 52450.9}, 'projectedBalances': {'availableFunds': 51817.29, 'availableFundsNonMarginableTrade': 51817.29, 'buyingPower': 104384.36, 'dayTradingBuyingPower': 188373.6, 'dayTradingBuyingPowerCall': 0.0, 'maintenanceCall': 0.0, 'regTCall': 0.0, 'isInCall': False, 'stockBuyingPower': 104384.36}}, 'aggregatedBalance': {'currentLiquidationValue': 56658.51, 'liquidationValue': 56657.29}}
+
+    # Define the API URL
+    url = "https://api.schwabapi.com/trader/v1/accounts?fields=positions"
+
+    # Set headers for the request
+    headers = {
+        "accept": "application/json",
+        "Authorization": f"Bearer {access_token}"
+    }
 
 
-# longs = []
-# shorts = []
-# get_positions(account_data2)
-# if len(positions_df) > 0:
-#     print(f'2 positions_df:\n{positions_df}')
-#     longs = long_options()
-#     shorts = short_options()
-#     print(f'2 longs:\n{longs}')
-#     print(f'2 shorts:\n{shorts}')
-# else:
-#     print(f'2 positions_df is empty')
+    try:
+
+        # Make the API request
+        response = requests.get(url, headers=headers)
+
+    except Exception as e:
+        print(f"1931 get_positions3(), An error occurred: {e}, exiting positions processing")
+        get_positions_success_flag = False
+        return get_positions_success_flag, short_positions, long_positions
+
+
+
+
+    # Handle the response
+    if response.status_code == 200:
+        get_positions_success_flag = True
+
+        # positions_data = response.json()
+        account_details = response.json()
+        # print(f'account_details type:{type(account_details)}, data:\n{account_details}')
+
+        for account in account_details:
+            account_number = account['securitiesAccount']['accountNumber']
+            # print(f"\nAccount: {account_number}, Type: {account['securitiesAccount']['type']}")
+
+
+            if 'positions' in account['securitiesAccount']:
+
+                
+
+                for position in account['securitiesAccount']['positions']:
+                    instrument = position['instrument']
+                    my_symbol = instrument['symbol']
+
+                    # Check 13th character and print corresponding option type
+                    option_type = "CALL" if my_symbol[12] == 'C' else "PUT" if my_symbol[12] == 'P' else "UNKNOWN"
+
+                    # Extract strike price (characters 15 to 18)
+                    strike = my_symbol[14:18]
+
+
+                    # print(f"\n  Symbol: {instrument['symbol']} ({option_type} {strike})")
+                    # print(f"  Description: {instrument['description']}")
+                    # print(f"  Asset Type: {instrument['assetType']}")
+                    # print(f"  Put/Call: {instrument.get('putCall', 'N/A')}")
+                    # print(f"  Market Value: {position['marketValue']}")
+                    # print(f"  Avg Price: {position.get('averagePrice', 'N/A')}")
+                    # print(f"  Short Quantity: {position['shortQuantity']}")
+                    # print(f"  Long Quantity: {position['longQuantity']}")
+                    # print(f"  P/L Today: {position['currentDayProfitLoss']} ({position['currentDayProfitLossPercentage']}%)")
+
+
+            else:
+                # print(" No Positions ")
+                pass
+
+
+
+    else:
+        print(f"Error: {response.status_code}, {response.text}")
+
+
+        
+    try:
+        # if 'pfcbFlag' not in account_details['securitiesAccount']:
+        if 'pfcbFlag' not in account_details[0]['securitiesAccount']:
+
+
+            # Handle the case where 'positions' key is not present
+            print("No pfcbFlag in account data. aborting get_positions()")
+            get_positions_success_flag = False
+            return get_positions_success_flag, short_positions, long_positions
+        
+    except Exception as e:
+        print(f"395 get_positions3(), An error occurred: {e}, exiting positions processing")
+        get_positions_success_flag = False
+        return get_positions_success_flag, short_positions, long_positions
+    
+
+    try:
+    
+
+        if 'positions' in account_details[0]['securitiesAccount']:
+            my_positions = account_details[0]['securitiesAccount']['positions']
+
+            with client_lock:
+                update_positions(my_positions)
+
+            short_positions = short_options()
+            long_positions = long_options()
+
+            return get_positions_success_flag, short_positions, long_positions
+
+
+        else:
+            # Handle the case where 'positions' key is not present
+            # print("200 No positions in account data, resetting positions table")
+            reset_positions()
+            return get_positions_success_flag, short_positions, long_positions
+
+    except Exception as e:
+            print(f"get_positions3() 8, An error occurred: {e}, exiting positions processing")
+            get_positions_success_flag = False
+            return get_positions_success_flag, short_positions, long_positions
+    
+
+
+
+# # test get_positions3()
+# positions_success_flag, short_legs, long_legs = get_positions3()
+# print(f'get_possitions3():\nsuccess flag:{positions_success_flag} \nshort legs:{short_legs} \nlong legs:{long_legs}\n')
 
 
 

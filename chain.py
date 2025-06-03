@@ -4,7 +4,7 @@ import paho.mqtt.client as mqtt
 import time
 import os
 from dotenv import load_dotenv
-import schwabdev
+# import schwabdev
 import pandas as pd
 from datetime import datetime, timezone, timedelta
 import warnings
@@ -18,10 +18,13 @@ import pytz
 import market_open
 import recommend_config
 import positions
+# import streamer
 
 quote_df_lock = threading.Lock()
 
 end_flag = False
+global time_since_last_mqtt_stream
+time_since_last_mqtt_stream = 0
 
 
 
@@ -97,9 +100,9 @@ def on_connect(client, userdata, flags, rc):
 
         elif mqtt_mode == MQTT_MODE_RAW:
             client.subscribe(SPX_SCHWAB_STREAM)
-            print(f"Subscribed to topic: {SPX_SCHWAB_STREAM}")
+            print(f"Subscribed to mqtt topic: {SPX_SCHWAB_STREAM}")
             client.subscribe(SPX_SCHWAB_QUERIED)
-            print(f"Subscribed to topic: {SPX_SCHWAB_QUERIED}")
+            print(f"Subscribed to mqtt topic: {SPX_SCHWAB_QUERIED}")
 
 
     else:
@@ -107,6 +110,8 @@ def on_connect(client, userdata, flags, rc):
 
 # Callback function when a message is received
 def on_message(client, userdata, msg):
+
+
     topic = msg.topic
     payload = msg.payload.decode()
 
@@ -439,6 +444,7 @@ def process_queried(topic, payload_dict):
 def process_message():
     global spx_last_fl
     global end_flag
+    global time_since_last_mqtt_stream
 
     while True:
         if end_flag == True:
@@ -457,6 +463,7 @@ def process_message():
 
         if "schwab/stream" in topic:
             process_stream(topic, payload_dict)
+            time_since_last_mqtt_stream = 0
 
         if "schwab/queried" in topic:
             process_queried(topic, payload_dict)
@@ -862,14 +869,17 @@ def segregrate_opt_grid(opt_grid):
          
      
 
-def meic_entry(schwab_client):
+def meic_entry():
     global quote_df
     global end_flag
+    global time_since_last_mqtt_stream
 
     display_quote_throttle = 0
 
     while True:
         time.sleep(1)
+
+        time_since_last_mqtt_stream += 1
 
         if end_flag == True:
             print(f'meic meic_entry() end_flag True, returning')
@@ -963,7 +973,7 @@ def meic_entry(schwab_client):
 
 
             ROW_NEEDED = 50
-            MAX_NAN = 2
+            MAX_NAN = 3
 
 
             if total_rows >= ROW_NEEDED and rows_with_nan_bid_ask <= MAX_NAN:
@@ -994,7 +1004,20 @@ def meic_entry(schwab_client):
                 persist_string(section_divider_str)
                 
 
-                print(f'chain: saved grid/chain data to {file_path} at {time_str}')
+                print()
+                print("=============================")
+
+
+                    
+                now_time = datetime.now()
+                now_datetime_str = now_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
+
+                if time_since_last_mqtt_stream > 30:
+                    print(f'chain: time_since_last_mqtt_stream {time_since_last_mqtt_stream} at {now_datetime_str}')
+                    continue
+
+
+                print(f'chain: saved grid/chain data to {file_path} at {now_datetime_str}\n')
 
                 # print(f'quote_json type:{type(quote_json)}, data:\n{quote_json}')
                 persist_string(f'\nChain data file: {file_path}:')
@@ -1042,7 +1065,33 @@ def meic_entry(schwab_client):
                 short_positions = []
                 long_positions = []
 
-                get_positions_success_flag, gbl_short_positions, gbl_long_positions = positions.get_positions2()
+                get_positions_success_flag = False
+                get_positions_cnt = 0
+                get_positions_try_max = 5
+                while get_positions_success_flag == False:
+
+                    # try get account details and short/long legs here
+                    get_positions_success_flag, gbl_short_positions, gbl_long_positions = positions.get_positions3()
+                    # print(f'\nchain: get_positions_success_flag:{get_positions_success_flag}')
+                    if get_positions_success_flag == False:
+                        time.sleep(5)
+                        get_positions_cnt += 1
+                        if get_positions_cnt > get_positions_try_max:
+                            break
+
+                        print(f'5834 retrying get positions')
+
+
+                if get_positions_success_flag == False:
+                    print(f'\nchain: get positions failed')
+
+                else:
+                    info_str = f'short positions: {gbl_short_positions}'
+                    print(info_str)
+                    info_str = f'long positions: {gbl_long_positions}'
+                    print(info_str)
+
+
 
 
                 (call_short,
@@ -1051,7 +1100,7 @@ def meic_entry(schwab_client):
                     put_long,
                     spx_price_picker,
                     atm_straddle,
-                    target_credit) = recommender.generate_recommendation(short_positions, long_positions, quote_sorted_json)
+                    target_credit) = recommender.generate_recommendation(gbl_short_positions, gbl_long_positions, quote_sorted_json)
                 
                 # print(f'call_short type:{type(call_short)}, data\n{call_short}')
                 # print(f'call_long type:{type(call_long)}, data\n{call_long}')
@@ -1097,7 +1146,7 @@ def meic_entry(schwab_client):
                     persist_string(f'Spread recommendations at {current_hhmmss}')
 
 
-                    info_string = f'SPX:{spx_price_picker:.2f}, ATM straddle:{atm_straddle:.2f}, credit target:{target_credit}'
+                    info_string = f'SPX:{spx_price_picker:.2f}, ATM straddle:{atm_straddle:.2f}, credit target:{target_credit:.2f}'
                     print(info_string)
                     persist_string(info_string)
 
@@ -1188,7 +1237,7 @@ def wait_for_market_to_open():
     print(f'chain: in wait_for_market_to_open')
 
     while True:
-        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=1, close_offset=0)
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=3, close_offset=0)
         if market_open_flag:
             break
 
@@ -1205,6 +1254,11 @@ def wait_for_market_to_open():
             # eastern_time_str = current_time.strftime('%H:%M:%S')
 
             print(f'chain: in wait_for_market_to_open, current Eastern time: {current_eastern_day} {current_eastern_hhmmss}')
+            
+            days_to_refresh = market_open.refresh_expiration_days()
+            if days_to_refresh < 1.5:
+                print(f'\nDays until refresh token expires: {days_to_refresh:.2f} !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n')
+
 
             pass
 
@@ -1227,7 +1281,9 @@ def chain_loop():
         print(f'chain: in chain_loop(), waiting for market to open')
 
         while True:
-            if is_market_open():
+            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=3, close_offset=0)
+            # if is_market_open():
+            if market_open_flag == True:
                 break
 
             throttle_wait_display += 1
@@ -1262,7 +1318,7 @@ def chain_loop():
         app_key, secret_key, my_tokens_file = load_env_variables()
 
         # create schwabdev client
-        schwab_client = schwabdev.Client(app_key, secret_key, tokens_file=my_tokens_file)
+        # schwab_client = schwabdev.Client(app_key, secret_key, tokens_file=my_tokens_file)
 
 
         # Start the keyboard thread
@@ -1278,8 +1334,8 @@ def chain_loop():
         processing_thread.start()
 
         # Start the meic_entry thread
-        # meic_entry_thread = threading.Thread(target=meic_entry, name="meic_entry")
-        meic_entry_thread = threading.Thread(target=meic_entry, name="meic_entry", args=(schwab_client,))
+        meic_entry_thread = threading.Thread(target=meic_entry, name="meic_entry")
+        # meic_entry_thread = threading.Thread(target=meic_entry, name="meic_entry", args=(schwab_client,))
 
         meic_entry_thread.daemon = True  # Daemonize thread to exit with the main program
         meic_entry_thread.start()
@@ -1292,7 +1348,7 @@ def chain_loop():
         while True:
                 mqtt_client.loop(timeout=1.0)  # process network traffic, with a 1-second timeout
                 # time.sleep(1) 
-                market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=1, close_offset=0)
+                market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=3, close_offset=0)
 
 
                 if market_open_flag == False:

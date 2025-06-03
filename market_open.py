@@ -1,7 +1,11 @@
 from datetime import datetime, timezone
+import pandas_market_calendars as mcal
 import calendar
 import pytz
 from datetime import timedelta
+
+import json
+
 
 
 
@@ -21,6 +25,10 @@ def is_market_open2(open_offset=0, close_offset=0):
     OPEN_MINUTE = 30
     CLOSE_HOUR = 16
     CLOSE_MINUTE = 0
+    return_val = False
+
+    
+
 
     # Get the current time in Eastern Time Zone
     eastern = pytz.timezone('US/Eastern')
@@ -38,6 +46,12 @@ def is_market_open2(open_offset=0, close_offset=0):
     market_open_flag = is_weekday and (market_open_time <= current_eastern_time <= market_close_time)
 
     seconds_to_next_minute = seconds_until_even_minute_utc(current_time_utc)
+
+    nyse_open_flag = is_nyse_open_today()
+
+    if nyse_open_flag == False:
+        # print(f'nyse is not open today')
+        return nyse_open_flag, current_eastern_time, seconds_to_next_minute
 
     return market_open_flag, current_eastern_time, seconds_to_next_minute
 
@@ -66,6 +80,99 @@ def seconds_until_even_minute():
 # print(f"Current Eastern Time: {current_eastern_time}")
 # print(f"Current Eastern Time (hh:mm:ss): {current_eastern_time.strftime('%H:%M:%S')}")
 # print(f"Current Day of the Week: {current_eastern_time.strftime('%A')}")
+
+
+
+
+
+# def calculate_token_ages(file_path):
+#     with open(file_path, 'r') as file:
+#         data = json.load(file)
+
+#     refresh_token_issued = datetime.fromisoformat(data["refresh_token_issued"])
+#     print(f'refresh_token_issued type:{type(refresh_token_issued)}, data:{refresh_token_issued}')
+
+
+#     access_token_issued = datetime.fromisoformat(data["access_token_issued"])
+
+
+
+#     now = datetime.now()
+#     minutes_since_refresh = (now - refresh_token_issued).total_seconds() / 60
+#     minutes_since_access = (now - access_token_issued).total_seconds() / 60
+
+#     return (minutes_since_refresh, minutes_since_access)
+
+
+def calculate_token_ages(file_path):
+    with open(file_path, 'r') as file:
+        data = json.load(file)
+
+    refresh_token_issued = datetime.fromisoformat(data["refresh_token_issued"])
+    access_token_issued = datetime.fromisoformat(data["access_token_issued"])
+
+    now = datetime.now(timezone.utc)
+    minutes_since_refresh = (now - refresh_token_issued).total_seconds() / 60
+    minutes_since_access = (now - access_token_issued).total_seconds() / 60
+
+    return (minutes_since_refresh, minutes_since_access)
+
+
+# file_path = r'C:\Users\mri17\OneDrive\python\schwabdev\tokens.json'
+# file_path = r'C:\Users\mri17\OneDrive\python\tokens.json'
+
+
+def refresh_expiration_days():
+    tokens_file_path = r"C:\MEIC\cred\tokens_mri.json"
+    minutes_since_refresh, minutes_since_access = calculate_token_ages(tokens_file_path)
+    days_since_refresh = minutes_since_refresh / 1440
+    days_until_refresh_expires = 7 - days_since_refresh
+    return days_until_refresh_expires
+
+def is_nyse_open_today():
+
+    # Get NYSE trading calendar
+    nyse = mcal.get_calendar("NYSE")
+
+    # Get today's date and check the nyse schedule
+    today = datetime.today().strftime("%Y-%m-%d")
+    schedule = nyse.schedule(start_date=today, end_date=today)
+
+    # # Get tomorrow's date and check the nyse schedule
+    # tomorrow = (datetime.today() + timedelta(days=1)).strftime("%Y-%m-%d")
+    # schedule = nyse.schedule(start_date=tomorrow, end_date=tomorrow)
+
+    
+    is_open = not schedule.empty
+
+    # print(f"NYSE is_open today? {is_open}") 
+    return is_open   
+
+
+
+# minutes_since_refresh, minutes_since_access = calculate_token_ages(tokens_file_path)
+# days_since_refresh = minutes_since_refresh / 1440
+# days_till_refresh_expires = 7 - days_since_refresh
+
+# print(f'minutes_since_refresh:{minutes_since_refresh}')
+# print(f'days_since_refresh:{days_since_refresh:.2f}')
+# print(f'days_till_refresh_expires:{days_till_refresh_expires:.2f}')
+
+
+# print(f'minutes_since_access:{minutes_since_access}')
+
+
+# days_left = refresh_expiration_days()
+# print(f'refresh days left:{days_left:.2f}')
+
+
+# nyse_open_flag = is_nyse_open_today()
+# print(f'nyse_open_flag:{nyse_open_flag}')
+
+
+
+
+
 
 
 

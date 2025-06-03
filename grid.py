@@ -4,7 +4,7 @@ import paho.mqtt.client as mqtt
 import time
 import os
 from dotenv import load_dotenv
-import schwabdev
+# import schwabdev
 import pandas as pd
 from datetime import datetime, timezone, timedelta
 import warnings
@@ -342,7 +342,9 @@ def add_to_quote_tbl2(sym,bid,ask,last):
 
             with warnings.catch_warnings():
                 warnings.simplefilter(action='ignore', category=FutureWarning)
-                quote_df = pd.concat([quote_df, new_row], ignore_index=True)
+                # quote_df = pd.concat([quote_df, new_row], ignore_index=True)
+                if not new_row.empty:
+	                quote_df = pd.concat([quote_df.dropna(axis=1, how="all"), new_row.dropna(axis=1, how="all")], ignore_index=True)
             
 
 
@@ -655,7 +657,7 @@ def publish_grid(quote_df_sorted, rows_with_nan_bid_ask, request_id):
 
 
 
-def grid_handling(schwab_client):
+def grid_handling():
     global quote_df
     global time_since_last_stream
     global time_since_last_quereied
@@ -743,7 +745,7 @@ def grid_handling(schwab_client):
                         no_none_nan_flag = True
 
             if total_reported_rows < total_rows:
-                print(f'grid: A new high for total rows:{total_rows} at {time_str}')
+                print(f'grid: A new high for total rows:{total_rows} at {time_str}, Number of Nan/None in bid/ask:{rows_with_nan_bid_ask}')
                 total_reported_rows = total_rows
 
 
@@ -928,8 +930,8 @@ def grid_loop():
 
         app_key, secret_key, my_tokens_file = load_env_variables()
 
-        # create schwabdev client
-        schwab_client = schwabdev.Client(app_key, secret_key, tokens_file=my_tokens_file)
+        # # create schwabdev client
+        # schwab_client = schwabdev.Client(app_key, secret_key, tokens_file=my_tokens_file)
 
 
         # Start the keyboard thread
@@ -946,7 +948,7 @@ def grid_loop():
 
         # Start the grid_handling thread
         # grid_handling_thread = threading.Thread(target=grid_handling, name="grid_handling")
-        grid_handling_thread = threading.Thread(target=grid_handling, name="grid_handling", args=(schwab_client,))
+        grid_handling_thread = threading.Thread(target=grid_handling, name="grid_handling")
 
         grid_handling_thread.daemon = True  # Daemonize thread to exit with the main program
         grid_handling_thread.start()

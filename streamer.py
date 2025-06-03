@@ -1,378 +1,396 @@
-# streamer.py
 
-# libraries
-import schwabdev
-from dotenv import load_dotenv
-import os
+
+
+import asyncio
+import paho.mqtt.client as mqtt
+import threading
 import time
 import json
-import threading
-from threading import Thread
-from datetime import datetime, timezone, timedelta
-import calendar
-import paho.mqtt.client as mqtt
-import sys
-import pytz
-import math
 import logging
-import keyboard
-import pprint
-import queue
-import market_open
+import websockets
+import websockets.exceptions
+from datetime import datetime, timezone
 import requests
-
-# message queue
-message_queue = queue.Queue()
-
-# resource lock (mutex)
-message_lock = threading.Lock()
-schwab_client_lock = threading.Lock()
-opt_tbl_lock = threading.Lock()
-
-
-MARKET_OPEN_OFFSET = 1
-MARKET_CLOSE_OFFSET = 0
-
-global last_extracted_spx_time
-last_extracted_spx_time = None
-global gbl_spx_last
-gbl_spx_last = None
+import aiohttp
+import os
+import market_open
 
 
 
 
-# Get the streamer version number from the file VERSIONS
-def get_version():
-    return_str = "None"
-    try:
-        with open("VERSION") as f:
-            return_str = f.read().strip()
-    except FileNotFoundError:
-        return_str = "Error: VERSION file does not exist"
-    except OSError as e:
-        return_str = f"Error: An OS error occurred: {e}"
 
-    except Exception as e:
-        return_str = f"Error: An unexpected error occurred: {e}"
+global rx_streamerUrl
+rx_streamerUrl = None
+global rx_accessToken
+rx_accessToken = None
+global rx_refreshToken
+rx_refreshToken = None
+global rx_acctHash
+rx_acctHash = None
+global rx_channel
+rx_channel = None
+global rx_correlId
+rx_correlId = None
+global rx_customerId
+rx_customerId = None
+global rx_functionId
+rx_functionId = None
 
-    return return_str
-    
+streamer_socket_url = None
+sch_client_customer_id = None
+sch_client_correl_id = None
+sch_client_channel = None
+sch_client_function_id = None
 
+call_strike_list = []  # Global list for call options
+put_strike_list = []   # Global list for put options
 
-# Global variables
-gbl_spx_price_fl = 0.0
+strike_list_lock = threading.Lock()
 
-gbl_version = ""
+global websocket
+websocket = None  # Global WebSocket connection
 
-gbl_quit_flag = False
-gbl_resubscribe_needed = False
-gbl_system_error_flag = False
-gbl_market_open_flag = False
-gbl_queried_pub_error_flag = False
-gbl_streamed_pub_error_flag = False
-time_since_last_stream_pub = False
-time_since_last_queried_pub = False
-gbl_schwab_client = None
-
-
-
-call_strike_tbl = []
-put_strike_tbl = []
-
-# gbl_open_fl = None
-# gbl_high_fl = None
-# gbl_low_fl = None
-gbl_close_fl = None
-todays_epoch_time = None
+REQUESTS_GET_TIMEOUT = 10
 
 
-# Define the MQTT broker address and port
-mqtt_broker_address = "localhost"  # Use "localhost" if the broker is running on the same PC
-mqtt_broker_port = 1883
+# Global quit flag
+quit_flag = False
 
-PUBLISH_MODE_RAW = 0
-PUBLISH_MODE_TOPICS = 1
-publish_mode = PUBLISH_MODE_RAW
+tokens_file_mod_date = None
 
-def load_env_variables():
-    
-    # parent_dir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
-    # env_file_path = os.path.join(parent_dir, '.env')
-    # load_dotenv(env_file_path)
+global get_quote_fail_count
+get_quote_fail_count = 0
 
-    load_dotenv()  # load environment variables from .env file
 
-    app_key = os.getenv('MY_APP_KEY')
-    secret_key = os.getenv('MY_SECRET_KEY')
-    tokens_file = os.getenv('TOKENS_FILE_PATH')
-
-    # print(f'my_local_app_key: {app_key}, my_local_secret_key: {secret_key}')
-    # print(f'tokens_file type: {type(tokens_file)}, value: {tokens_file}')
-
-    return app_key, secret_key, tokens_file
-
-def check_for_q_key():
-    # Check if the 'q' key is pressed
-    if keyboard.is_pressed('q'):
-        return True
-    
-    else:
-        return False
+get_current_day_history_lock = threading.Lock()
+chain_data_lock = threading.Lock()
 
 
 
-def my_handler(message):
-    message_queue.put(message)
 
-
-prev_put_list = None  
-prev_call_list = None     
-
-
-def subscribe_to_options(passed_streamer_client): 
-    global prev_put_list  
-    global prev_call_list
-    global gbl_system_error_flag
-
-    global schwab_client_lock
-
-    # print(f'streamer_client type:{type(passed_streamer_client)}, value:{passed_streamer_client}')
-
-    my_client = passed_streamer_client
-
-    # my_client.send(my_client.level_one_equities("TSLA", "0,1,2,3,4,5,6,7,8"))
-
-    # Extract each put symbol, create a comma-separated string, and subscribe
-    with opt_tbl_lock:
-        put_list = ', '.join(item['Symbol'] for item in put_strike_tbl)
-    # print(f'2P put_list type:{type(put_list)}, data:]\n{put_list}')
-
-    try:
-        # with schwab_client_lock:
-        my_client.send(my_client.level_one_options(put_list, "0,1,2,3,4,5,6,7,8,10,28,29,30,31,32"))
-    
-    except Exception as e:
-        print(f"100SEF my_client.send for put_list: An error occurred: {e}")
-        gbl_system_error_flag = True
-        return
+# Set up logging
+# logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+# # Configure logging to write only to a file
+logging.basicConfig(
+    filename="mri_log.log",  # Log file name
+    level=logging.INFO,  # Set logging level
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 
 
-    # # Extract each call symbol, create a comma-separated string, and subscribe
-    with opt_tbl_lock:
-        call_list = ', '.join(item['Symbol'] for item in call_strike_tbl)
-    # print(f'2C call_list type:{type(call_list)}, data:]\n{call_list}')
+
+mqtt_publish_lock = threading.Lock()
+global mqtt_client_tx
+mqtt_client_tx = None
+
+# MQTT Broker Details
+BROKER_ADDRESS = "localhost"
+PORT_NUMBER = 1883
+CREDS_INFO_TOPIC = "mri/creds/info"
+
+# ------------------ MQTT Client ------------------
+
+def on_connect(client, userdata, flags, rc):
+    """ Callback function triggered when the client connects to the broker """
+    print(f"Connected to MQTT Broker with result code {rc}")
+    client.subscribe(CREDS_INFO_TOPIC)
+    print(f"Subscribed to topic: {CREDS_INFO_TOPIC}")
+
+def on_message(client, userdata, msg):
+    """ Callback function triggered when a message is received """
+
+    global rx_refreshToken
+    global rx_accessToken
+    global rx_acctHash
+    global rx_streamerUrl
+    global rx_customerId
+    global rx_correlId
+    global rx_channel
+    global rx_functionId
+
+    topic = msg.topic
+    payload = msg.payload.decode()
 
 
-    try:
-        # with schwab_client_lock:
-        my_client.send(my_client.level_one_options(call_list, "0,1,2,3,4,5,6,7,8,10,28,29,30,31,32"))
-
-    except Exception as e:
-        print(f"102SEF my_client.send for call_list: An error occurred: {e}")
-        gbl_system_error_flag = True
-        return
-
-    if put_list != prev_put_list:
-        if prev_put_list != None:
-            pass
-            # print(f'new put_list is different, new put_list:\n:{put_list}\nprev_put_list:\n{prev_put_list}')
-            
-        prev_put_list = put_list
-
-    else:
-        # print(f'put_list has not changed')
-        pass
-
-
-    if call_list != prev_call_list:
-        if prev_call_list != None:
-            pass
-            # print(f'new call_list is different, new call_list:\n:{call_list}\nprev_put_list:\n{prev_call_list}')
-
-        prev_call_list = call_list
-
-    else:
-        # print(f'call_list has not changed')
-        pass
+    # print(f"Received message on topic '{topic}': {payload}")
 
     
+    if CREDS_INFO_TOPIC in topic:
+        # Convert string to JSON
+        payload_json = json.loads(payload)
+
+        # Extract values with prefixed variable names
+        tok_cnt = 0
+        for key, value in payload_json.items():
+            tok_cnt += 1
+            globals()[f"rx_{key}"] = value
+
+        # print(f'\n5109 received rx_ tokens, tok_cnt::{tok_cnt}')
+
+        # print(f'\n\n5100 rx_refreshToken:{rx_refreshToken}')
+        # print(f'5101 rx_accessToken:{rx_accessToken}')
+        # print(f'5102 rx_acctHash:{rx_acctHash}')
+        # print(f'5103 rx_streamerUrl:{rx_streamerUrl}')
+        # print(f'5104 rx_customerId:{rx_customerId}')
+        # print(f'5105 rx_correlId:{rx_correlId}')
+        # print(f'5106 rx_channel:{rx_channel}')
+        # print(f'5107 rx_functionId:{rx_functionId}\n')
 
 
-def streamer_thread(client):
-    global gbl_quit_flag
-    global gbl_system_error_flag
-    global gbl_resubscribe_needed
-    global gbl_market_open_flag
 
-    global schwab_client_lock
 
-    print(f'streamer_thread() entry')
-    
-    while gbl_market_open_flag == False:
-        # print(f'839 waiting for market open')
+
+
+
+
+
+
+def mqtt_services():
+    """ Runs the MQTT client in a separate thread """
+    global quit_flag
+    global mqtt_client_tx
+
+    client = mqtt.Client()
+    # client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    mqtt_client_tx = client
+
+    client.on_connect = on_connect
+    client.on_message = on_message
+    client.connect(BROKER_ADDRESS, PORT_NUMBER, keepalive=60)
+
+    client.loop_start()
+
+    while not quit_flag:
         time.sleep(1)
 
-
-    # print(f'in streamer_thread(), market is open')
-
-    subscribe_to_schwab(client)
-    if gbl_system_error_flag == True:
-        print(f'in streamer_thread() startup, gbl_system_error_flag is True')
-        return
-
-
-    # create the streamer client
-
-    strm_client = None
-
-    try:
-        # with schwab_client_lock:
-        strm_client = client.stream
-
-    except Exception as e:
-        print(f"104SEF strm_client = client.stream: An error occurred: {e}")
-        gbl_system_error_flag = True
-        return
-
-
-    # start the stream message handler
-    try: 
-        # with schwab_client_lock:
-        strm_client.start(my_handler)
-
-    except Exception as e:
-        print(f"106SEF strm_client.start(): An error occurred: {e}")
-        gbl_system_error_flag = True
-        return
+    print("MQTT service terminating...")
+    client.loop_stop()
 
 
 
-    # subscribe to SPX (schwab api requires "$SPX")
-    try:
-        # with schwab_client_lock:
-        strm_client.send(strm_client.level_one_equities("$SPX", "0,1,2,3,4,5,6,7,8"))
+def mqtt_setup():
+    """ Creates and starts MQTT thread """
+    global quit_flag
+    mqtt_thread = threading.Thread(target=mqtt_services, daemon=True)
+    mqtt_thread.start()
 
-    except Exception as e:
-        print(f"108SEF strm_client.send(strm_client.level_one_equities($SPX): An error occurred: {e}")
-        gbl_system_error_flag = True
-        return
-    
-    # # subscribe to account activity
-    # try:
-    #     # with schwab_client_lock:
-    #     strm_client.send(strm_client.account_activity("Account Activity", "0,1,2,3"))
-
-    # except Exception as e:
-    #     print(f"108SAA strm_client.send(strm_client.account_activity): An error occurred: {e}")
-    #     gbl_system_error_flag = True
-    #     return
-    
-    
-
-
-    # streamer.send(streamer.level_one_equities("$SPX, TSLA, AAPL", "0,1,2,3,4,5,6,7,8"))
-    # appl_keys = "AAPL  241108C00190000, AAPL  241108C00180000"
-    # streamer.send(streamer.level_one_options(appl_keys, "0,1,2,3,4,5,6,7,8,10,28,29,30,31,32"))
-    # streamer.send(streamer.level_one_equities("$SPX, TSLA", "0,1,2,3,4,5,6,7,8"))
-    # streamer.send(streamer.level_one_futures("/ES", "0,1,2,3"))
-    # streamer.send(streamer.level_one_options("SPXW  241122C05865000", "0,1,2,3,4,5,6,7,8")) 
-
-
-    # subscribe to the desired SPXW options
-
-    # TODO: ensure that put_strike_tbl and call_strike_tbl have data
-    wait_for_strike_tbl_count = 0
-    while True:
-        time.sleep(1)
-        put_len = len(put_strike_tbl)
-        call_len = len(call_strike_tbl)
-
-        if put_len == 0 or call_len == 0:
-            print(f'waiting for put_strike_table, len:{put_len}, and call_strike_tbl, len:{call_len}, count:{wait_for_strike_tbl_count}')
-            continue
-
-        else:
-            break
-
-
-    # if not put_strike_tbl:
-    #     temp_str = f'put_strike_table was empty'
-    #     logging.error(temp_str)
-    #     print(temp_str)
-    #     return
-    
-    # if not call_strike_tbl:
-    #     temp_str = f'call_strike_table was empty'
-    #     logging.error(temp_str)
-    #     print(temp_str)
-    #     return
-
-    
-
-    # Extract each put symbol, create a comma-separated string, and subscribe
-    with opt_tbl_lock:
-        put_list = ', '.join(item['Symbol'] for item in put_strike_tbl)
-    # print(f'1P put_list type:{type(put_list)}, data:]\n{put_list}')
-
-
-    # Extract each call symbol, create a comma-separated string, and subscribe
-    with opt_tbl_lock:
-        call_list = ', '.join(item['Symbol'] for item in call_strike_tbl)
-    # print(f'1C call_list type:{type(call_list)}, data:]\n{call_list}')
-
-
-    subscribe_to_schwab(client)
-    subscribe_to_options(strm_client)
-
-
-    # this loop keeps the streamer thread active
-    while True:
+    while not quit_flag:
         time.sleep(1)
 
-        # we abort if the market is no longer open
+    mqtt_thread.join()
+    print("MQTT setup thread exiting.")
 
-        market_open_flag, current_eastern_time, seconds_to_next_minute = \
-            market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=MARKET_CLOSE_OFFSET)
+# ------------------ Schwab Streaming ------------------
+
+
+async def aio_get_call_strike_list():
+    """ Safely retrieves the latest call strike list """
+    global call_strike_list
+
+    await asyncio.to_thread(strike_list_lock.acquire)  # Corrected usage
+    try:
+        return list(call_strike_list)  # Return a copy to avoid modification issues
+    finally:
+        strike_list_lock.release()  # Always release the lock
+
+async def aio_get_put_strike_list():
+    """ Safely retrieves the latest put strike list """
+    global put_strike_list
+
+    await asyncio.to_thread(strike_list_lock.acquire)  # Corrected usage
+    try:
+        return list(put_strike_list)  # Return a copy to avoid modification issues
+    finally:
+        strike_list_lock.release()  # Always release the lock
+
+
+async_mqtt_publish_lock = asyncio.Lock()
+
+# called by async functions
+async def aio_publish_quote(topic, payload):
+    global mqtt_client_tx
+
+    if not mqtt_client_tx:
+        print(f'could not aio publish quote, mqtt_client_tx is None')
+
+
+    async with async_mqtt_publish_lock:
+        loop = asyncio.get_running_loop()
+
+        try:
+            loop.call_soon_threadsafe(mqtt_client_tx.publish, topic, payload)  # Thread-safe publish
+        except Exception as e:
+            info_str = f'2010 Error in aio MQTT publish: {e}'
+            print(info_str)
+            logging.error(info_str)
+
+
+
+sync_mqtt_publish_lock = threading.Lock()
+
+def sync_publish_quote(topic, payload):
+    global mqtt_client_tx
+
+    with sync_mqtt_publish_lock:
+        try:
+            mqtt_client_tx.publish(topic, payload)  # Standard locking
+        except Exception as e:
+            info_str = f'2020 Error in sync MQTT publish: {e}'
+            print(info_str)
+            logging.error(info_str)
+
+
+
+
+CREDS_REQUEST_TOPIC = "mri/creds/request"
+
+async def aio_publish_request_creds():
+
+    topic = CREDS_REQUEST_TOPIC
+    payload = " "
+    await aio_publish_quote(topic, payload)
+    pass
         
-        
-        if market_open_flag == False:
-        # if is_market_open() == False:
-
-            gbl_market_open_flag = False
-
-        abort_flag, abort_reason = any_abort_condition()
-
-        if abort_flag == True:
-            print(f'streamer_thread detects abort, reason: {abort_reason}')
-            break
-
-
-        if gbl_resubscribe_needed == True:
-
-            # print(f'in streamer thread, gbl_resubscribe_needed is true')
-
-            gbl_resubscribe_needed = False
-            subscribe_to_schwab(client)
-            subscribe_to_options(strm_client)
-
-
-    print(f'streamer_thread client.stream.stop()')
-
-    try:
-        # with schwab_client_lock:
-        client.stream.stop()
-
-    except Exception as e:
-        print(f"110SEF client.stream.stop(): An error occurred: {e}")
-        gbl_system_error_flag = True
-
-
-    print(f'exiting streamer_thread')
 
 
 
-def translate_quote_key_names(json_message):
+# async def wait_for_rx_credentials():
+#     """ Asynchronous function to wait for all rx_ credentials to be set """
+
+
+#     await aio_publish_request_creds()
+
+#     while True:
+#         if (rx_streamerUrl is not None
+#             and rx_accessToken is not None
+#             and rx_refreshToken is not None
+#             and rx_acctHash is not None
+#             and rx_channel is not None
+#             and rx_correlId is not None
+#             and rx_customerId is not None
+#             and rx_functionId is not None):
+
+#             print("All rx_ credentials initialized")
+#             return
+
+#         else:
+#             await asyncio.sleep(2)  # Non-blocking wait
+#             print("rx_ credentials not initialized yet")
+#             await aio_publish_request_creds()
+
+
+async def wait_for_rx_credentials(timeout=30):
+    """ Wait for all rx_ credentials with a timeout to prevent infinite loop """
+    global rx_streamerUrl, rx_accessToken, rx_refreshToken
+    global rx_acctHash, rx_channel, rx_correlId
+    global rx_customerId, rx_functionId
+
+    await aio_publish_request_creds()
+
+    start_time = asyncio.get_running_loop().time()
+    
+    while asyncio.get_running_loop().time() - start_time < timeout:
+        if all([
+            rx_streamerUrl, rx_accessToken, rx_refreshToken,
+            rx_acctHash, rx_channel, rx_correlId,
+            rx_customerId, rx_functionId
+        ]):
+            print("All rx_ credentials initialized")
+            return
+
+        print("rx_ credentials not initialized yet, retrying...")
+        await asyncio.sleep(2)
+        await aio_publish_request_creds()
+
+    raise TimeoutError("Timeout waiting for rx_ credentials.")      
+
+
+
+async def get_user_preferences():
+    global streamer_socket_url
+    global sch_client_customer_id
+    global sch_client_correl_id
+    global sch_client_channel
+    global sch_client_function_id
+
+    success_flag = False
+
+    current_time_str = datetime.now().strftime('%H:%M:%S')
+    print(f'\ngetting userPreference at {await aio_get_current_time_str()}')
+
+    url = "https://api.schwabapi.com/trader/v1/userPreference"
+    headers = {
+        "accept": "application/json",
+        "Authorization": f"Bearer {rx_accessToken}"
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers, timeout=REQUESTS_GET_TIMEOUT) as response:
+            print(f'8061 userPreference:{response.status}')
+            userPreference_data = await response.json()  # Use await to process JSON
+           
+
+    if response.status == 200:
+        try:
+            userPreference_data = await response.json()
+            streamer_info = userPreference_data.get("streamerInfo", [{}])[0]
+
+            streamer_socket_url = streamer_info.get("streamerSocketUrl", "")
+            sch_client_customer_id = streamer_info.get("schwabClientCustomerId", "")
+            sch_client_correl_id = streamer_info.get("schwabClientCorrelId", "")
+            sch_client_channel = streamer_info.get("schwabClientChannel", "")
+            sch_client_function_id = streamer_info.get("schwabClientFunctionId", "")
+
+            print(f'\n145 userPreference settings:')
+            print(f"Streamer Socket URL: {streamer_socket_url}")
+            print(f"Schwab Client Customer ID: {sch_client_customer_id}")
+            print(f"Schwab Client Correl ID: {sch_client_correl_id}")
+            print(f"Schwab Client Channel: {sch_client_channel}")
+            print(f"Schwab Client Function ID: {sch_client_function_id}")
+
+            success_flag = True
+
+        except (KeyError, TypeError, ValueError) as e:
+            info_str = f'2030 Error parsing user preferences: {e}'
+            print(info_str)
+            logging.error(info_str)
+
+
+        return success_flag            
+
+
+    else:
+        info_str = f'3375 userPreference Error {response.status}: {await response.text()}'
+        print(info_str)
+        logging.error(info_str)
+
+    return success_flag
+
+
+
+async def aio_get_current_time_str():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+
+
+
+async def aio_publish_raw_streamed_quote(data):
+    global time_since_last_stream_pub
+
+    json_str = json.dumps(data)
+    # print(f'in aio_publish_raw_streamed_quote, json_str type:{type(json_str)}, data:\n{json_str}')
+
+    topic = "schwab/stream"
+    await aio_publish_quote(topic, json_str)
+    time_since_last_stream_pub = 0
+    pass
+
+
+
+
+async def aio_translate_quote_key_names(json_message):
     for item in json_message['data']:
         if item['service'] == 'LEVELONE_EQUITIES':
             for content in item['content']:
@@ -454,38 +472,1329 @@ def translate_quote_key_names(json_message):
 
 
 
-# Create a threading lock for MQTT publishing
-publish_lock = threading.Lock()
 
-   
+
+async def aio_extract_spx_last(item):
+    global gbl_spx_last, last_extracted_spx_time
+
+    try:
+
+        if 'content' in item and isinstance(item['content'], list):
+            for entry in item['content']:
+                if 'key' in entry and entry['key'] == '$SPX' and 'last' in entry:
+                    gbl_spx_last = entry['last']
+                    last_extracted_spx_time = datetime.now()
+
+                    # print(f'\n>>>>>>>>>>\ngbl_spx_last type:{type(gbl_spx_last)}, value:{gbl_spx_last:.2f}')
+                    # print(f'last_extracted_spx_time type:{type(last_extracted_spx_time)}, value:{last_extracted_spx_time}')
+                    break
+
+    except Exception as e:
+        info_str = f'2040 aio_extract_spx_last error:{e}'
+        print(info_str)
+        logging.error(info_str)
+        # pass
+
+
+
+
+async def process_received_message(last_message):
+
+    json_message = json.loads(last_message)
+    # print(f'pm json_message type{type(json_message)}, data:\n{json_message}')
+
+    if 'data' in json_message:
+
+        json_message = await aio_translate_quote_key_names(json_message)
+
+        # print(f'data json_message type{type(json_message)}, data:\n{json_message}')
+
+
+        # # Check for existence of LEVELONE_EQUITIES and LEVELONE_OPTIONS
+        # services = {entry["service"] for entry in json_message.get("data", [])}
+        # has_equities = "LEVELONE_EQUITIES" in services
+        # has_options = "LEVELONE_OPTIONS" in services
+        # print(f'LEVELONE_EQUITIES found?:{has_equities}  LEVELONE_OPTIONS found?:{has_options}  ')
+
+
+
+        await aio_publish_raw_streamed_quote(json_message)
+
+        for item in json_message.get("data", []):
+                    service = item.get("service")
+                    if service == "LEVELONE_EQUITIES":
+                        # TODO CHECK
+                        await aio_extract_spx_last(item)
+
+
+    elif 'notify' in json_message:
+        # print(f'notify message type:{type(json_message)}, data:\n{json_message}')
+
+        # Extract heartbeat value if it exists
+        notify_list = json_message.get("notify", [])
+
+        time = None
+        for item in notify_list:
+            if "heartbeat" in item:
+                timestamp_ms = int(item["heartbeat"])  # Convert string to integer
+                time = datetime.fromtimestamp(timestamp_ms / 1000)  # Convert to datetime
+                print(f"heartbeat at {time.strftime('%Y-%m-%d %H:%M:%S')} Local Time")
+                # publish_raw_streamed_quote(item)
+                break  # Stop searching after finding the first heartbeat
+
+
+
+
+        pass
+
+    elif 'response' in json_message:
+        # print(f'response message type:{type(json_message)}, data:\n{json_message}')
+        pass
+
+
+    else:
+        # print(f'unsupported message type:\n{json_message}')
+        pass
+
+
+
+
+
+async def aio_is_valid_response(data):
+    """ Validates API response format. """
+    
+    # print(f'is_valid_response() response type:{type(data)}, data:\n{data}')
+    
+    try:
+        # Ensure data is a dictionary (parse JSON string if necessary)
+        if isinstance(data, str):
+            data = await asyncio.to_thread(json.loads, data)  # Run JSON parsing in a separate thread
+
+
+        if "response" in data and isinstance(data["response"], list):
+            return True  # Standard API response
+        if "notify" in data and isinstance(data["notify"], list):
+            return True  # Heartbeat and notifications
+        if "data" in data and isinstance(data["data"], list):
+            return True  # Subscription and market data updates
+
+        
+        print(f'IVR unknown is returning false, data type:{type(data)} data content:{data}')
+        return False  # Unknown format
+    
+    except json.JSONDecodeError as e:
+        info_str = f'2050 error in IVR: Failed to parse JSON - {e}'
+        print(info_str)
+        logging.error(info_str)
+        return False
+    
+
+    except Exception as e:
+        info_str = f'2060 error in IVR: {e}'
+        print(info_str)
+        logging.error(info_str)
+        return False
+    
+
+
+
+websocket_lock = asyncio.Lock()
+
+async def safe_websocket_reconnect():
+    """ Safely closes and reconnects WebSocket before restarting receive_messages() """
+    global websocket
+
+    async with websocket_lock:  # Ensure exclusive access to websocket
+        if websocket and not websocket.closed:
+            try:
+                await websocket.close()
+                await asyncio.sleep(1)
+            except websockets.exceptions.ConnectionClosedError:
+                info_str = "1010 WebSocket was already closed, skipping close."
+                logging.warning(info_str)
+                print(info_str)
+            except Exception as e:
+                info_str = f'1020 Unexpected error while closing WebSocket: {e}'
+                logging.warning(info_str)
+                print(info_str)
+
+        logging.info("1030 Calling exponential_backoff_reconnect()")
+        await exponential_backoff_reconnect()
+        await asyncio.sleep(3)
+
+
+global rx_msg_func_call_count
+rx_msg_func_call_count = 0  # Initialize global call counterspxspx
+
+
+
+async def receive_messages(duration=60):
+    """ Continuously receives and processes messages from the WebSocket for `duration` seconds. """
+    global websocket, rx_msg_func_call_count
+    invalid_message_count = 0
+    max_invalid_messages = 5
+
+    rx_msg_func_call_count += 1
+
+    try:
+        async with asyncio.timeout(duration):
+            while True:
+                try:
+                    response = await websocket.recv()
+
+                    if not await aio_is_valid_response(response):
+                        logging.warning("1040 Received invalid message format")
+                        print("0930 Received invalid message format")
+                        invalid_message_count += 1
+
+                        if invalid_message_count >= max_invalid_messages:
+                            logging.error("1050 Too many invalid messages received, forcing WebSocket reconnection.")
+                            print(f'9036 calling exp back reconn')
+                            await exponential_backoff_reconnect()
+                            print("Restarting receive messages after forced reconnect.")
+                            await asyncio.sleep(3)
+                            print(f'37100 calling receive messages')
+                            await receive_messages()
+                            return
+
+                    else:
+                        await process_received_message(response)
+                        invalid_message_count = 0
+
+                except asyncio.exceptions.IncompleteReadError:
+                    logging.warning("1060 Incomplete read error. Attempting reconnect.")
+                    print("Incomplete read error. Attempting reconnect.")
+                    await safe_websocket_reconnect()
+                    print(f'37101 calling receive messages')
+                    await receive_messages()
+                    return
+
+                except websockets.exceptions.ConnectionClosedError:
+                    logging.warning("1070 WebSocket connection lost unexpectedly. Attempting reconnect.")
+                    print("WebSocket connection lost unexpectedly. Attempting reconnect.")
+                    await safe_websocket_reconnect()
+                    print(f'37102 calling receive messages after connecion lost/reconnect')
+                    await receive_messages()
+                    return
+
+                except Exception as e:
+                    logging.warning(f"1080 General WebSocket error: {e}, attempting reconnect.")
+                    print(f"1082 General WebSocket error: {e}, attempting reconnect.")
+                    await safe_websocket_reconnect()
+                    print(f'37103 calling receive messages')
+                    await receive_messages()
+                    return
+
+    except TimeoutError:
+        # This error is expected with  asyncio.timeout() 
+        # logging.info(f"1080 Message receiving stopped after {duration} seconds.")
+        # print(f"Message receiving stopped after {duration} seconds.")
+        pass
+
+    except Exception as e:
+        info_str = f'1090 Unexpected error receiving messages: {e}'
+        logging.error(info_str)
+        print(info_str)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# async def receive_messages(duration=60):
+#     """ Continuously receives and processes messages from the WebSocket for `duration` seconds. """
+#     global websocket, rx_msg_func_call_count
+#     invalid_message_count = 0  # Track consecutive invalid messages
+#     max_invalid_messages = 5   # Threshold before forcing reconnect
+
+#     # print(f'rcv msg duration:{duration}')
+
+
+
+#     # Increment call counter
+#     rx_msg_func_call_count += 1
+#     # print(f'rx_msg_func_call_count:{rx_msg_func_call_count} at {await aio_get_current_time_str()} Local Time')
+
+
+#     try:
+#         start_time = time.time()
+#         while time.time() - start_time < duration:
+#             try:
+#                 response = await websocket.recv()
+
+#                 if not await aio_is_valid_response(response):
+#                     logging.warning("1100 Received invalid message format")
+#                     print("0930 Received invalid message format")
+#                     invalid_message_count += 1  # Increment invalid message count
+
+#                     # If too many invalid messages occur in a row, trigger reconnect
+#                     if invalid_message_count >= max_invalid_messages:
+#                         logging.error("1110 Too many invalid messages received, forcing WebSocket reconnection.")
+#                         print(f'9036 calling exp back reconn')
+#                         await exponential_backoff_reconnect()
+#                         print("Restarting receive messages after forced reconnect.")
+#                         await asyncio.sleep(3)  # Short pause before resuming
+#                         print(f'37100 calling receive messages')
+#                         await receive_messages()  # Restart WebSocket listening
+#                         return  # Exit current loop after reconnect
+
+#                 else:
+#                     # print(f'0931 received api valid resonse, response:{response}, processing')
+#                     await process_received_message(response)
+#                     # print(f'0932 returned from process received message')
+#                     invalid_message_count = 0  # Reset count on valid message
+
+#             except asyncio.exceptions.IncompleteReadError:
+#                 info_str = "1120 Incomplete read error. Attempting reconnect."
+#                 logging.warning(info_str)
+#                 print(info_str)
+#                 await safe_websocket_reconnect()
+#                 print(f'37101 calling receive messages')
+#                 await receive_messages()
+#                 return  
+
+#             except websockets.exceptions.ConnectionClosedError:
+#                 info_str = f'1130 WebSocket connection lost unexpectedly at {await aio_get_current_time_str()}. Attempting reconnect.'
+#                 logging.warning(info_str)
+#                 print(info_str)
+#                 await safe_websocket_reconnect()
+#                 print(f'37102 calling receive messages')
+#                 await receive_messages()
+#                 return
+
+#             except Exception as e:
+#                 info_str = f"1140 General WebSocket error: {e}, attempting reconnect."
+#                 logging.warning(info_str)
+#                 print(info_str)
+#                 await safe_websocket_reconnect()
+#                 print(f'37103 calling receive messages')
+#                 await receive_messages()
+#                 return
+
+#     except asyncio.TimeoutError:
+#         logging.warning("1150 Timeout while receiving messages.")
+
+#     except Exception as e:
+#         logging.error(f"1160 Unexpected error receiving messages: {e}")
+
+
+
+
+
+
+async def exponential_backoff_reconnect():
+    """ Implements retry logic with exponential backoff for WebSocket reconnection. """
+    global websocket
+
+    # Ensure proper WebSocket closure before reconnecting
+    if websocket and not websocket.closed:
+        try:
+            print("2402 previous websocket was not closed, attempting to close it.")
+            await websocket.close()
+            await asyncio.sleep(1)  # Allow time for closure before reconnecting
+        except websockets.exceptions.ConnectionClosedError:
+            logging.warning("1170 WebSocket already closed, skipping close.")
+        except Exception as e:
+            info_str = f'1180 Unexpected error while closing WebSocket: {e}'
+            logging.error(info_str)
+            print(info_str)
+
+    # Reset websocket instance before fresh reconnection
+    websocket = None  
+
+    backoff_times = [1, 2, 4, 8]  # Exponential backoff sequence in seconds
+    reconnect_retry_cnt = 0  # Keep scoped locally
+
+    for attempt, delay in enumerate(backoff_times, 1):
+        logging.info(f"1190  Reconnection attempt {attempt}, waiting {delay} seconds...")
+        await asyncio.sleep(delay)  # Non-blocking sleep
+
+        try:
+            reconnect_retry_cnt += 1
+
+            logging.info(f"1200 Attempting streamer login, retry count: {reconnect_retry_cnt}")
+            await login_to_schwab_streamer()  # Attempt login
+
+            info_str = f'1210 Reconnection successful at {await aio_get_current_time_str()}'
+            logging.info(info_str)
+            return  # Exit function on success
+        except websockets.exceptions.ConnectionClosedError as e:
+            info_str = f'1220 WebSocket closed error during attempt {attempt}: {e}'
+            logging.error(info_str)
+            print(info_str)
+
+        except asyncio.TimeoutError:
+            info_str = f'1230 Timeout occurred during attempt {attempt}.'
+            logging.error(info_str)
+            print(info_str)
+
+        except Exception as e:
+            info_str = f'1240 General failure on attempt {attempt}: {e}'
+            logging.error(info_str)
+            print(info_str)
+
+    info_str = f'1250 Max reconnection attempts reached, shutting down.'
+    logging.error(info_str)
+    print(info_str)
+
+
+
+
+
+
+
+
+
+async def logout_from_schwab_streamer():
+    global websocket
+
+    if not websocket:
+        return
+    
+    if not websocket.open:
+        return
+    
+
+    # # Close the old WebSocket if it's still open
+    # if websocket and not websocket.closed:
+    #     print("2404 previous websocket was not closed, Closing previous WebSocket connection before reconnecting.")
+    #     await websocket.close()
+    #     await asyncio.sleep(2)  # Give time for closure before reconnecting
+        
+
+    # # Establish new WebSocket connection
+    # websocket = await websockets.connect(streamer_socket_url)
+
+
+    api_logout_form = {
+        "requests": [
+            {
+                "requestid": "1",
+                "service": "ADMIN",
+                "command": "LOGOUT",
+                "SchwabClientCustomerId": rx_customerId,
+                "SchwabClientCorrelId": rx_correlId,
+            }
+        ]
+    }
+
+
+
+    try:
+        # websocket = await websockets.connect(streamer_socket_url)
+
+
+        await websocket.send(json.dumps(api_logout_form))
+        response = await websocket.recv()
+
+        resp_json = json.loads(response)
+        print(f'\n9673 logout connect resp_json:{resp_json}\n')
+
+        # Extract 'code' value from the first item in 'response'
+        if "response" in resp_json and resp_json["response"]:
+            resp_code = resp_json["response"][0]["content"].get("code", -1)  # Default to -1 if 'code' is missing
+        else:
+            resp_code = -1  # Indicate an invalid response structure
+
+        print(f'9674 Login response code: {resp_code}')
+
+        # Determine success based on resp_code
+        if resp_code == 0:
+            print(f'1260  API Login successful at {await aio_get_current_time_str()}')
+        else:
+            print(f"1270  API Login NOT successful, code: {resp_code}")
+            logging.error(f"1280 API Login failed with code {resp_code}")
+
+
+    except Exception as e:
+        info_str = f"1290 Error logging out Schwab API: {e}"
+        print(info_str)
+        logging.error(info_str)
+
+
+
+
+
+
+async def login_to_schwab_streamer():
+    global websocket
+
+    success_flag = False
+
+    # Close the old WebSocket if it's still open
+    if websocket and not websocket.closed:
+        print("2404 previous websocket was not closed, Closing previous WebSocket connection before reconnecting.")
+        await websocket.close()
+        await asyncio.sleep(2)  # Give time for closure before reconnecting
+        
+
+    # Establish new WebSocket connection
+    websocket = await websockets.connect(streamer_socket_url)
+
+
+    api_login_form = {
+        "requests": [
+            {
+                "requestid": "1",
+                "service": "ADMIN",
+                "command": "LOGIN",
+                "SchwabClientCustomerId": rx_customerId,
+                "SchwabClientCorrelId": rx_correlId,
+                "parameters": {
+                    "Authorization": rx_accessToken,
+                    "SchwabClientChannel": rx_channel,
+                    "SchwabClientFunctionId": rx_functionId
+                }
+            }
+        ]
+    }
+
+
+
+    try:
+        websocket = await websockets.connect(streamer_socket_url)
+        await websocket.send(json.dumps(api_login_form))
+        response = await websocket.recv()
+
+        resp_json = json.loads(response)
+        # print(f'\n9973 login connect resp_json:{resp_json}\n')
+
+        # Extract 'code' value from the first item in 'response'
+        if "response" in resp_json and resp_json["response"]:
+            resp_code = resp_json["response"][0]["content"].get("code", -1)  # Default to -1 if 'code' is missing
+        else:
+            resp_code = -1  # Indicate an invalid response structure
+
+        print(f'Login response code: {resp_code}')
+
+        # Determine success based on resp_code
+        if resp_code == 0:
+            print(f'1300 API Login successful at {await aio_get_current_time_str()}')
+            success_flag = True
+        else:
+            print(f"1310 API Login NOT successful, code: {resp_code}")
+            logging.error(f"1320 API Login failed with code {resp_code}")
+
+
+    except websockets.exceptions.ConnectionClosedError as e:
+        info_str = f"1330  WebSocket connection closed unexpectedly: {e}, calling exponential_backoff_reconnect()"
+        print(info_str)
+        logging.error(info_str)
+        print(f'9032 calling exp back reconn')
+        await exponential_backoff_reconnect()
+        print(f'110 returned from exponential_backoff_reconnect')
+
+        print("Restarting receive_messages() after successful reconnect.")
+        print(f'37104 calling receive messages')
+        await receive_messages()  # Restart WebSocket message loop
+
+
+    except Exception as e:
+        info_str = f"1340 Error logging into Schwab API: {e}"
+        print(info_str)
+        logging.error(info_str)
+
+    return success_flag
+
+
+
+
+async def subscribe_level_one_options(customer_id, correl_id, symbol_list, fields):
+    global websocket
+    global strike_list_lock
+
+
+    with strike_list_lock:
+        opt_list_str = ", ".join(symbol_list)
+
+
+    subscription_request = {
+        "requests": [
+            {
+                "service": "LEVELONE_OPTIONS",
+                "requestid": 7,
+                "command": "ADD",
+                "SchwabClientCustomerId": customer_id,
+                "SchwabClientCorrelId": correl_id,
+                "parameters": {
+                    # "keys": symbol_list,
+                    # "keys": temp_sym_list,
+                    "keys": opt_list_str,
+
+                    "fields": fields
+                }
+            }
+        ]
+    }
+
+    await websocket.send(json.dumps(subscription_request))
+
+    async with websocket_lock:  # Lock WebSocket interactions
+        try:
+            response = await asyncio.wait_for(websocket.recv(), timeout=5)  # Timeout after 5 seconds
+        except asyncio.TimeoutError:
+            logging.error("1350 LOO Timeout while waiting for WebSocket response.")
+            print("LOO Timeout while waiting for WebSocket response.")
+            return
+
+
+    if not await aio_is_valid_response(response):
+        info_str = '1360 subscribe_level_one_optionss() failed valid check'
+        print(info_str)
+        logging.error(info_str)
+    else:
+
+        info_str = '1370 subscribe_level_one_optionss() was valid'
+        print(info_str)
+        logging.info(info_str)
+
+
+
+
+
+async def subscribe_level_one_equities(customer_id, correl_id, symbols, fields):
+    global websocket
+
+    success_flag = False
+
+    subscription_request = {
+        "requests": [{
+            "service": "LEVELONE_EQUITIES",
+            "requestid": 2,
+            "command": "SUBS",
+            "SchwabClientCustomerId": customer_id,
+            "SchwabClientCorrelId": correl_id,
+            "parameters": {
+                "keys": symbols,
+                "fields": fields
+            }
+        }]
+    }
+
+    await websocket.send(json.dumps(subscription_request))
+
+    async with websocket_lock:  # Lock WebSocket interactions
+        try:
+            response = await asyncio.wait_for(websocket.recv(), timeout=5)  # Timeout after 5 seconds
+        except asyncio.TimeoutError:
+            logging.error("1380 LOE Timeout while waiting for WebSocket response.")
+            print("1390 LOE Timeout while waiting for WebSocket response.")
+            return
+
+
+    if not await aio_is_valid_response(response):
+        info_str = f'1400 subscribe_level_one_equities() failed valid check'
+        print(info_str)
+        logging.error(info_str)
+    else:
+        info_str = f'1410 subscribe_level_one_equities() succeeded'
+        print(info_str)
+        logging.info(info_str)
+        success_flag = True
+
+    return success_flag
+
+
+
+async def subscribe_to_options():
+
+    success_flag = False
+
+    if call_strike_list == None or len(call_strike_list) == 0:
+        info_str = f'2201 unable to subscribe to options, call_strike_list:{call_strike_list}'
+        print(info_str)
+        logging.error(info_str)
+        return False
+    
+    if put_strike_list == None or len(put_strike_list) == 0:
+        info_str = f'2202 unable to subscribe to options, put_strike_list:{put_strike_list}'
+        print(info_str)
+        logging.error(info_str)
+        return False
+    
+    if sch_client_customer_id == None or sch_client_correl_id == None :
+        info_str = f'2203 unable to subscribe to options, sch_client_customer_id:{sch_client_customer_id}, sch_client_correl_id:{sch_client_correl_id}'
+        print(info_str)
+        logging.error(info_str)
+        return False
+
+        
+
+
+    print(f'17912 doing option subscriptions at {await aio_get_current_time_str()}, Local Time')
+
+    call_list_copy = await aio_get_call_strike_list()
+    put_list_copy = await aio_get_put_strike_list()
+
+    try:
+        await subscribe_level_one_options(sch_client_customer_id, sch_client_correl_id, call_list_copy, "0,1,2,3,4,5,6,7,8,10,28,29,30,31,32")
+        await subscribe_level_one_options(sch_client_customer_id, sch_client_correl_id, put_list_copy, "0,1,2,3,4,5,6,7,8,10,28,29,30,31,32")
+
+        last_subscription_time = time.time()  # Reset timestamp after subscription
+        print(f' initial last_subscription_time:{last_subscription_time}')
+        success_flag = True
+
+
+    except Exception as e:
+        info_str = f'1430 Error in initial subscribe_level_one_options(): {e}'
+        logging.error(info_str)
+        print(info_str)
+
+    return success_flag
+
+
+
+
+
+async def streamer_services():
+    """ Infinite work loop that returns if quit_flag is set to True """
+    global quit_flag
+    print("Streamer services started...")
+
+
+
+
+    # streamer service outer (session) loop
+    while not quit_flag: # outer (session) loop
+
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=4, close_offset=0)
+        # market_open_flag, current_eastern_time, seconds_to_next_minute = await asyncio.to_thread(market_open.is_market_open2(open_offset=4, close_offset=0))
+
+        # # print(f'Streamer checking market open, market_open_flag:{market_open_flag}')
+        # wait_market_open_cnt = 0
+        # while not market_open_flag:
+        #     time.sleep(1)
+        #     wait_market_open_cnt += 1
+        #     if wait_market_open_cnt % 60 == 3:
+        #         print(f'streamer: outer loop, waiting for market open {await aio_get_current_time_str()} (Local)')
+        #     market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=4, close_offset=0)
+        #     # market_open_flag, current_eastern_time, seconds_to_next_minute = await asyncio.to_thread(market_open.is_market_open2(open_offset=4, close_offset=0))
+
+
+
+
+        print("Streamer waiting for mqtt client to be created")
+        wait_mqtt_cnt = 0
+        while mqtt_client_tx == None:
+            wait_mqtt_cnt += 1
+            await asyncio.sleep(1)  # Non-blocking sleep for 1 second
+            if wait_mqtt_cnt % 20 == 19:
+                info_str = f'Streamer still waiting for mqtt client to be created, cnt:{wait_mqtt_cnt}'
+                print(info_str)
+                logging.warning(info_str)
+
+
+
+
+        try:
+
+            await wait_for_rx_credentials(timeout=30) 
+
+        except Exception as e:
+            info_str = f"1440  wait_for_rx_credentials failed: {e}"
+            print(info_str)
+            logging.error(info_str)
+            return
+        
+        user_preferences_success = await get_user_preferences()
+
+        if not user_preferences_success:
+            info_str = f'3853 user preferences failed'
+            logging.info(info_str)
+            print(info_str)
+
+
+
+        logging.info(f"1450  Initial attempt streamer login")
+        login_success = await login_to_schwab_streamer()  # Attempt login
+
+        if not login_success:
+            info_str = f'3857 login failed'
+            logging.info(info_str)
+            print(info_str)
+
+
+
+        sub_LOE_success = await subscribe_level_one_equities(sch_client_customer_id, sch_client_correl_id, "$SPX", "0,1,2,3,4,5,8,10")
+
+        if not sub_LOE_success:
+            info_str = f'3873 subscribe level one equities failed'
+            logging.info(info_str)
+            print(info_str)
+
+
+
+        # print(f'Streamer checking market open, market_open_flag:{market_open_flag}')
+        wait_market_open_cnt = 0
+        while not market_open_flag:
+            wait_market_open_cnt += 1
+            # print(f'37273 calling receive messages')
+            await receive_messages(duration=10)
+            # print(f'37274 returned  receive messages wait_cnt:{wait_put_call_cnt}, at {await aio_get_current_time_str()} (Local)')
+
+            if wait_market_open_cnt % 6 == 5:
+                print(f'streamer: outer loop, waiting for market open {await aio_get_current_time_str()} (Local)')
+            
+            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=4, close_offset=0)
+            # market_open_flag, current_eastern_time, seconds_to_next_minute = await asyncio.to_thread(market_open.is_market_open2(open_offset=4, close_offset=0))
+
+
+
+
+
+        # wait for the call/put lists to be initialized
+        wait_put_call_cnt = 0
+        while wait_put_call_cnt < 30:
+            print(f'waiting for strike lists to be initialized, wait_put_call_cnt:{wait_put_call_cnt}')
+            if len(call_strike_list) > 0 and len(put_strike_list) > 0:
+                print(f'strike lists have been initialized, wait_put_call_cnt:{wait_put_call_cnt}')
+                break
+
+            await asyncio.sleep(1)
+
+
+
+        strm_loop_cnt = 0
+
+        while not quit_flag:
+            strm_loop_cnt += 1
+            # await asyncio.sleep(1)  # Simulate work
+            print(f'Streamer work loop, strm_loop_cnt:{strm_loop_cnt}')
+
+
+            print(f'88301 calling subscribe to options')
+
+            sub_opt_success = await subscribe_to_options()
+            if not sub_opt_success:
+                info_str = f'3882 subscribe options failed'
+                logging.warning(info_str)
+                print(info_str)
+
+            print(f'88302 returned from subscribe to options')
+
+
+
+
+            print(f'37105 calling receive messages')
+            await receive_messages()
+
+            print(f'37106 returned from receive messages')
+
+
+
+
+        print("Streamer services terminating...")
+
+    # while not quit_flag: # outer (session) loop
+
+
+
+
+async def schwab_setup():
+    """ Creates, starts, and joins the streamer_services coroutine """
+    global quit_flag
+    print("Schwab setup starting streamer services...")
+
+    await streamer_services()  # Run streamer until quit_flag is True
+
+    print("Schwab setup terminating...")
+
+
+
+# ------------------ Schwab quote polling ------------------
+
+global todays_epoch_time
+todays_epoch_time = None
+
+global spx_open
+spx_open = None
+global spx_high
+spx_high = None
+global spx_low
+spx_low = None
+global spx_close
+spx_close = None
+global ohlc_get_time
+ohlc_get_time = None
+global chain_strike_cnt
+chain_strike_cnt = None
+
+def get_today_in_epoch():
+    global todays_epoch_time 
+
+    try:
+
+        # Calculate the time in milliseconds since the UNIX epoch
+        now = datetime.now(timezone.utc)
+
+        epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        todays_epoch_time  = int((now - epoch).total_seconds() * 1000.0)
+
+    except Exception as e:
+        info_str = f'1252 get today in epoch error:{e}'
+        logging.error(info_str)
+        print(info_str)
+
+
+
+
+
+# def get_spx_current_today_ohlc():
+#     global get_current_day_history_lock
+#     global spx_open
+#     global spx_high
+#     global spx_low
+#     global spx_close
+#     global ohlc_get_time
+#     global chain_strike_cnt
+
+#     spx_day_ohlc = None
+
+#     if todays_epoch_time == None or rx_accessToken == None:
+#         print(f'unable to get ohlc, todays_epoch_time:{todays_epoch_time}, rx_accessToken{rx_accessToken}')
+#         return spx_day_ohlc
+
+
+#     try:
+
+#         url = "https://api.schwabapi.com/marketdata/v1/pricehistory"
+#         params = {
+#             "symbol": "$SPX",
+#             "periodType": "month",
+#             "period": 1,
+#             "frequencyType": "daily",
+#             "frequency": 1,
+#             "startDate": todays_epoch_time,  # Using stored variable
+#             "endDate": todays_epoch_time,    # Using stored variable
+#             "needExtendedHoursData": "false",
+#             "needPreviousClose": "false"
+#         }
+
+#         headers = {
+#             "accept": "application/json",
+#             "Authorization": f"Bearer {rx_accessToken}"
+#         }
+
+#         response = requests.get(url, headers=headers, params=params, timeout=REQUESTS_GET_TIMEOUT)
+
+#         # print(f'8071 pricehistory:{response.status_code}')
+#         # print(f'8072 data:{response.json()}')
+
+
+
+
+
+
+#         # print(f'775 response.status_code type:{type(response.status_code)}, data:{response.status_code}')
+#         spx_day_ohlc = response.json()  # Parses JSON response if successful
+#         # print(f'776 spx_day_ohlc type:{type(spx_day_ohlc)}, data:\n{spx_day_ohlc}') 
+
+
+#         # Ensure 'candles' and 'empty' exist and 'empty' is False
+#         if 'candles' in spx_day_ohlc and 'empty' in spx_day_ohlc and not spx_day_ohlc['empty']:
+#             first_candle = spx_day_ohlc['candles'][0]  # Extract first candle entry
+
+#             # if spx_open != None:
+#             #     print(f'\nold high: {spx_high:.2f}       low:{spx_low:.2f}')
+
+#             # Assign values to variables
+#             spx_open = first_candle['open']
+#             spx_high = first_candle['high']
+#             spx_low = first_candle['low']
+#             spx_close = first_candle['close']
+
+#             # print(f'\nnew high: {spx_high:.2f}       low:{spx_low:.2f}\n')
+
+#             ohlc_get_time = datetime.now()
+#             ohlc_get_time_str = ohlc_get_time.strftime('%y-%m-%d %H:%M:%S')
+
+#             day_high_distance = abs(spx_close - spx_high)
+#             day_low_distance = abs(spx_close - spx_low)
+#             max_distance = max(day_high_distance, day_low_distance)
+#             # print(f'max_distance:{max_distance:.2f}')
+
+#             chain_strike_cnt = (int)(max_distance / 5) + 50
+
+#             current_time = datetime.now()
+#             current_time_str = current_time.strftime('%H:%M:%S')
+#             print(f'285 chain_strike_cnt:{chain_strike_cnt} at {current_time_str}')
+            
+
+#             # # Print extracted values for verification
+#             # print(f"SPX Open type:{type(spx_open)}, value:{spx_open}")
+#             # print(f"SPX High type:{type(spx_high)}, value:{spx_high}")
+#             # print(f"SPX Low type:{type(spx_low)}, value:{spx_low}")
+#             # print(f"SPX Close type:{type(spx_close)}, value:{spx_close}")
+#             # print(f"OHLC Datetime Object: {ohlc_get_time}")
+#             # print(f"OHLC Datetime String: {ohlc_get_time_str} local time")
+
+
+
+#         return spx_day_ohlc
+
+
+
+#     except Exception as e:
+#         print(f'2974 pricehistory error:{e}, could not get SPX o/h/l/c')
+#         pass
+#         raise # This indicates an exception to the calling function so that it knows the call failed
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def get_spx_current_today_ohlc():
+    global get_current_day_history_lock
+    global spx_open, spx_high, spx_low, spx_close
+    global ohlc_get_time, chain_strike_cnt
+    global todays_epoch_time, rx_accessToken
+
+    spx_day_ohlc = None
+
+    if todays_epoch_time is None or rx_accessToken is None:
+        print(f'unable to get ohlc, todays_epoch_time: {todays_epoch_time}, rx_accessToken: {rx_accessToken}')
+        return None
+
+    try:
+        url = "https://api.schwabapi.com/marketdata/v1/pricehistory"
+        params = {
+            "symbol": "$SPX",
+            "periodType": "month",
+            "period": 1,
+            "frequencyType": "daily",
+            "frequency": 1,
+            "startDate": todays_epoch_time,
+            "endDate": todays_epoch_time,
+            "needExtendedHoursData": "false",
+            "needPreviousClose": "false"
+        }
+
+        headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer {rx_accessToken}"
+        }
+
+        response = requests.get(url, headers=headers, params=params, timeout=REQUESTS_GET_TIMEOUT)
+
+        if response.status_code == 200:
+            spx_day_ohlc = response.json()
+
+            if 'candles' in spx_day_ohlc and 'empty' in spx_day_ohlc and not spx_day_ohlc['empty']:
+                first_candle = spx_day_ohlc['candles'][0]
+
+                with get_current_day_history_lock:
+                    spx_open = first_candle['open']
+                    spx_high = first_candle['high']
+                    spx_low = first_candle['low']
+                    spx_close = first_candle['close']
+                    ohlc_get_time = datetime.now()
+
+                    day_high_distance = abs(spx_close - spx_high)
+                    day_low_distance = abs(spx_close - spx_low)
+                    max_distance = max(day_high_distance, day_low_distance)
+                    chain_strike_cnt = int(max_distance / 5) + 50
+
+                print(f'285 chain_strike_cnt: {chain_strike_cnt} at {ohlc_get_time.strftime("%H:%M:%S")}')
+            else:
+                print("SPX data response is empty or malformed.")
+        else:
+            print(f"Failed to fetch SPX data. Status code: {response.status_code}")
+            return None
+
+        return spx_day_ohlc
+
+    except requests.exceptions.Timeout:
+        info_str = f'3010 Request timed out while fetching SPX OHLC data'
+        logging.error(info_str)
+        print(info_str)
+        raise
+
+    except Exception as e:
+        info_str = f'3020 pricehistory error: {e}, could not get SPX o/h/l/c'
+        logging.error(info_str)
+        print(info_str)
+        raise
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# def parse_spx_chain(spx_chain):
+#     """ Parses the SPX option chain and extracts relevant strike symbols """
+#     global call_strike_list, put_strike_list  # Access global lists
+#     global strike_list_lock
+
+
+#     print(f'in parse_spx chain')
+    
+#     for exp_date, strikes in spx_chain.get("callExpDateMap", {}).items():
+#         for strike_price, options in strikes.items():
+#             for option in options:
+#                 symbol = option.get("symbol", "")
+
+#                 # print(f'in parse_spx_chain() for calls, found symbol:{symbol}')
+
+#                 if symbol.startswith("SPXW  ") and "C0" in symbol:
+#                     with strike_list_lock:
+#                         if symbol not in call_strike_list:  # Ensure unique entries
+#                             # print(f'adding {symbol} to call_strike_list')
+#                             call_strike_list.append(symbol)
+                
+
+#     # print(f'new call_strike_list type{type(call_strike_list)}, size:{len(call_strike_list)}, data:\n{call_strike_list}')
+#     print(f'new call_strike_list size:{len(call_strike_list)}')
+
+
+#     for exp_date, strikes in spx_chain.get("putExpDateMap", {}).items():
+#         for strike_price, options in strikes.items():
+#             for option in options:
+#                 symbol = option.get("symbol", "")
+
+#                 # print(f'in parse_spx_chain() for puts, found symbol:{symbol}')
+                
+#                 # Check if symbol starts with "SPXW  " and contains "C0" or "P0"
+#                 if symbol.startswith("SPXW  ") and "P0" in symbol:
+#                     with strike_list_lock:
+#                         if symbol not in put_strike_list:  # Ensure unique entries
+#                             put_strike_list.append(symbol)
+
+#     print(f'new put_strike_list size:{len(put_strike_list)}')
+
+
+#     # print(f"Call Strike List: {call_strike_list}")
+#     # print(f"Put Strike List: {put_strike_list}")
+
+
+
+
+
+
+
+
+
+
+def parse_spx_chain(spx_chain):
+    """Parses the SPX option chain and extracts relevant strike symbols."""
+    global call_strike_list, put_strike_list
+    global strike_list_lock
+
+    print(f'in parse_spx_chain')
+
+    if not isinstance(spx_chain, dict):
+        print("Invalid spx_chain format")
+        return
+
+    call_map = spx_chain.get("callExpDateMap", {})
+    put_map = spx_chain.get("putExpDateMap", {})
+
+    for exp_date, strikes in call_map.items():
+        for strike_price, options in strikes.items():
+            for option in options:
+                symbol = option.get("symbol", "")
+                if symbol.startswith("SPXW  ") and "C0" in symbol:
+                    with strike_list_lock:
+                        if symbol not in call_strike_list:
+                            call_strike_list.append(symbol)
+
+    print(f'new call_strike_list size: {len(call_strike_list)}')
+
+    for exp_date, strikes in put_map.items():
+        for strike_price, options in strikes.items():
+            for option in options:
+                symbol = option.get("symbol", "")
+                if symbol.startswith("SPXW  ") and "P0" in symbol:
+                    with strike_list_lock:
+                        if symbol not in put_strike_list:
+                            put_strike_list.append(symbol)
+
+    print(f'new put_strike_list size: {len(put_strike_list)}')
+
+
+
+
+
+# def get_spx_option_chain():
+
+#     if chain_strike_cnt == None or rx_accessToken == None:
+#         print(f'could not get option chain, chain_strike_cnt:{chain_strike_cnt}, rx_accessToken:{rx_accessToken}')
+#         return None
+    
+
+#     try:
+#         today = datetime.now()
+
+#         # Format fromDate and toDate as strings in 'YYYY-MM-DD' format
+#         myFromDate = today.strftime('%Y-%m-%d')
+#         myToDate = today.strftime('%Y-%m-%d')
+
+#         url = "https://api.schwabapi.com/marketdata/v1/chains"
+#         params = {
+#             "symbol": "$SPX",
+#             "contractType": "ALL",
+#             "strikeCount": chain_strike_cnt,
+#             "includeUnderlyingQuote": "true",
+#             "strategy": "SINGLE",
+#             "fromDate": myFromDate,
+#             "toDate": myToDate
+#         }
+
+#         headers = {
+#             "accept": "application/json",
+#             "Authorization": f"Bearer {rx_accessToken}"
+#         }
+
+#         response = requests.get(url, headers=headers, params=params, timeout=REQUESTS_GET_TIMEOUT)
+
+#         # print(f'8071 chains:{response.status_code}')
+#         # print(f'8072 data:{response.json()}')
+
+#         # Check HTTP response status
+#         response.raise_for_status()  # Raises HTTPError automatically if status code is not 200
+
+#         # Safely parse JSON response
+#         try:
+#             spx_chain = response.json()
+#         except requests.exceptions.JSONDecodeError:
+#             raise ValueError("Error decoding JSON response from Schwab API")
+
+#         # print(f"SPX Option Chain Response type:{type(spx_chain)}, data:\n{spx_chain}")
+#         return spx_chain
+
+#     except requests.exceptions.ConnectionError as conn_err:
+#         raise RuntimeError("Network error: Unable to connect to Schwab API") from conn_err
+#     except requests.exceptions.Timeout as timeout_err:
+#         raise RuntimeError("Request timeout: Schwab API took too long to respond") from timeout_err
+#     except requests.exceptions.HTTPError as http_err:
+#         raise RuntimeError(f"HTTP error occurred: {http_err}") from http_err
+#     except Exception as err:
+#         raise RuntimeError(f"Unexpected error occurred: {err}") from err
+    
+
+
+
+
+
+
+
+
+
+def get_spx_option_chain():
+    global chain_strike_cnt, rx_accessToken
+    global chain_data_lock  # Assume this lock exists
+
+    with chain_data_lock:
+        local_strike_cnt = chain_strike_cnt
+        local_accessToken = rx_accessToken
+
+    if local_strike_cnt is None or local_accessToken is None:
+        print(f'could not get option chain, chain_strike_cnt:{local_strike_cnt}, rx_accessToken:{local_accessToken}')
+        return None
+
+    try:
+        today = datetime.now()
+        myFromDate = myToDate = today.strftime('%Y-%m-%d')
+
+        url = "https://api.schwabapi.com/marketdata/v1/chains"
+        params = {
+            "symbol": "$SPX",
+            "contractType": "ALL",
+            "strikeCount": local_strike_cnt,
+            "includeUnderlyingQuote": "true",
+            "strategy": "SINGLE",
+            "fromDate": myFromDate,
+            "toDate": myToDate
+        }
+
+        headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer {local_accessToken}"
+        }
+
+        response = requests.get(url, headers=headers, params=params, timeout=REQUESTS_GET_TIMEOUT)
+        response.raise_for_status()
+
+        try:
+            spx_chain = response.json()
+        except requests.exceptions.JSONDecodeError:
+            raise ValueError("3030 Error decoding JSON response from Schwab API")
+
+        if not isinstance(spx_chain, dict):
+            raise ValueError("3040 SPX chain response is not a dictionary")
+
+        return spx_chain
+
+    except requests.exceptions.ConnectionError as conn_err:
+        raise RuntimeError("3050 Network error: Unable to connect to Schwab API") from conn_err
+    
+    except requests.exceptions.Timeout as timeout_err:
+        raise RuntimeError("3060 Request timeout: Schwab API took too long to respond") from timeout_err
+    
+    except requests.exceptions.HTTPError as http_err:
+        print(f"3070 HTTP error: {http_err}, response: {response.text}")
+        raise RuntimeError(f"3072 HTTP error occurred: {http_err}") from http_err
+    
+    except Exception as err:
+        raise RuntimeError(f"3080 Unexpected error occurred: {err}") from err
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Function to publish quotes via MQTT
 def publish_quote(topic, payload):
     global mqtt_client_tx
 
+    if mqtt_client_tx == None:
+        print(f'cannont publish quote, mqtt_client_tx is None')
+
     # Use the lock to ensure thread safety
-    with publish_lock:
+    with mqtt_publish_lock:
         mqtt_client_tx.publish(topic, payload)
-        
-
-        # if "000/last" in topic:
-
-
-        #     # Convert the float to a string
-        #     temp_last_str = str(payload)
-
-        #     # Split the string at the decimal point
-        #     parts = temp_last_str.split('.')
-
-        #     # Determine the number of decimal places
-        #     if len(parts) > 1:
-        #         decimal_places = len(parts[1])
-        #     else:
-        #         decimal_places = 0
-
-        #     if decimal_places > 2:
-        #         print(f'034 published quote:\n  topic type{type(topic)} data:{topic}\n  payload type{type(payload)} data:{payload}')
-
-        #         print(f'The number of decimal places in temp_last is: {decimal_places}')
 
 
 
@@ -507,1629 +1816,449 @@ def publish_raw_queried_quote(data):
 
 
 
-def publish_raw_streamed_quote(data):
-    global time_since_last_stream_pub
-
-    json_str = json.dumps(data)
-    # print(f'in publish_raw_streamed_quote, json_str type:{type(json_str)}, data:\n{json_str}')
-
-    topic = "schwab/stream"
-    publish_quote(topic, json_str)
-    time_since_last_stream_pub = 0
-    pass
 
 
-def publish_levelone_equities(data):
-    # pretty_json = json.dumps(data, indent=2)
-    # print(f'publish_levelone_equities(), data type:{type(data)}, Pretty JSON:\n{pretty_json}')
+
+tokens_file_path = r"C:\MEIC\cred\tokens_mri.json"
+acct_file_path = r"C:\MEIC\cred\acct_mri.json"
+
+def get_modification_date(file):
+    return datetime.fromtimestamp(os.path.getmtime(file))
+
+def get_modification_date(file):
+    return datetime.fromtimestamp(os.path.getmtime(file))
+
+
+
+
+
+def get_opt_quote(sym):
+    global get_quote_success_count
+    global get_quote_fail_count
+
+    if rx_accessToken == None:
+        print(f'unable to get opt quote, rx_accessToken is None')
+        return
+
+    quotes_response_json = None
+    current_time = datetime.now()
+    current_time_str = current_time.strftime('%H:%M:%S')
+
+    # current_tokens_mod_date = get_modification_date(tokens_file_path)
+    # if current_tokens_mod_date != tokens_file_mod_date:
+    #     print(f'641-1 tokens file has been modified at {current_time_str}')
+    #     print(f'641-2 old access token:{rx_accessToken}')
+    #     get_file_tokens()
+    #     print(f'641-3 new access token:{accessToken}')
+
+    opt_list_str = sym
+        
+
+    # with stike_list_lock:
+    #     opt_list_str = ", ".join(syms)
+
+
+    # Define the API endpoint
+    url = "https://api.schwabapi.com/marketdata/v1/quotes"
+
+    # Define query parameters
+    params = {
+        "symbols": opt_list_str,
+        "fields": "quote",
+        "indicative": "false"
+    }
+
+    # Define headers
+    headers = {
+        "accept": "application/json",
+        "Authorization": f"Bearer {rx_accessToken}"
+    }
     
-    # Iterate through the items in the data list
-    # for entry in data.get('data', []):
-    if 'content' in data:
-        for item in data['content']:
-            key = item['key'].lstrip('$')  # Strip leading '$' from key if present
-            key_lower = key.lower()
+    # with get_opt_quote_lock:
 
-            if 'Bid Price' in item:
-                topic = f"schwab/stock/{key_lower}/bid"
-                publish_quote(topic, item['Bid Price'])
-            if 'Ask Price' in item:
-                topic = f"schwab/stock/{key_lower}/ask"
-                publish_quote(topic, item['Ask Price'])
-            if 'Last Price' in item:
-                topic = f"schwab/stock/{key_lower}/last"
-                publish_quote(topic, item['Last Price'])
+    # print(f'get_opt_quote\n  url:{url}\n  params:{params}\n  headers:{headers}')
+
+    try:
+
+        # Make the GET request
+        response = requests.get(url, params=params, headers=headers, timeout=REQUESTS_GET_TIMEOUT)
+
+    except Exception as e:
+        get_quote_fail_count += 1
+        info_str = f'3100 exception requesting quotes :{e} at {current_time_str}, returning'
+        logging.error(info_str)
+        print(info_str)
+        return
+    
+    try:
+
+        if response.status_code != 200:
+            info_str = f'1460 get_opt_quotes request failed:{response.status_code} at {current_time_str}, returning'
+            print(info_str)
+            logging.error(info_str)
+            return
+        
+
+        
+    except Exception as e:
+        get_quote_fail_count += 1
+        info_str = f'1470 exception requesting quotes :{e} at {current_time_str}, returning'
+        print(info_str)
+        logging.error(info_str)
+        return
+
+    try:
+
+        quote_response_json = response.json()
+        # print(f'single quote quote_response_json json type:{type(quote_response_json)}:\n{quote_response_json}') 
+        # pretty_json = json.dumps(quote_response_json, indent=2)
+        # print(f'single quote requests.get pretty_json type:{type(pretty_json)}:\n{pretty_json}') 
+
+    except Exception as e:
+        get_quote_fail_count += 1
+        info_str = f'734 exception requesting quotes :{e} at {current_time_str}, returning' 
+        print(info_str)
+        logging.error(info_str)
+        return
+    
+
+    symbol_key = list(quote_response_json.keys())[0]  # Get the first key dynamically
+    has_quote_key = "quote" in quote_response_json.get(symbol_key, {})
+
+    # print(f'Key "quote" exists in quote_response_json: {has_quote_key}')
+
+    if has_quote_key == True:
+        publish_raw_queried_quote(quote_response_json)
+
+    else:
+        print(f'Key "quote" does not exist in the quote data')
 
 
-def publish_levelone_options(data):
-    # pretty_json = json.dumps(data, indent=2)
-    # print(f'publish_levelone_options(), data type:{type(data)}, Pretty JSON:\n{pretty_json}')
-
-    # Iterate through the items in the data list
-    # for entry in data.get('data', []):
-    if 'content' in data:
-        for item in data['content']:
-            key = item['key'].lstrip('$')  # Strip leading '$' from key if present
-            # print(f'levelone options key type:{type(key)}, key:{key}')
-            # Split the string into tokens
-            tokens = key.split()
-            # Check if the first token is "SPXW" and strip the trailing 'W'
-            # if tokens[0] == "SPXW":
-            #     tokens[0] = tokens[0].rstrip('W')
-
-            # Join the tokens back without spaces
-            key_scrub = ''.join(tokens)
-
-            # print(f"Original key: {key}")
-            # print(f"Scrubbed key: {key_scrub}")
-
-            if 'Bid Price' in item:
-                topic = f"schwab/option/spx/basic/{key_scrub}/bid"
-                publish_quote(topic, item['Bid Price'])
-            if 'Ask Price' in item:
-                topic = f"schwab/option/spx/basic/{key_scrub}/ask"
-                publish_quote(topic, item['Ask Price'])
-            if 'Last Price' in item:
-                topic = f"schwab/option/spx/basic/{key_scrub}/last"
-                publish_quote(topic, item['Last Price'])
 
 
 
-                temp_last = item['Last Price']
 
-                # print(f'debugging temp_last type:{type(temp_last)}, data:{temp_last}')
+def polling_services():
+    """ Periodically polls the schwab API for SPX and option quotes  """
+    global quit_flag
+    global put_strike_list, call_strike_list
 
-                # Convert the float to a string
-                temp_last_str = str(temp_last)
+    print(f'streamer: polling services bc 100')
 
-                # Split the string at the decimal point
-                parts = temp_last_str.split('.')
 
-                # Determine the number of decimal places
-                if len(parts) > 1:
-                    decimal_places = len(parts[1])
+    while not quit_flag: # polling services outer (session) loop
+
+        print(f'streamer: polling services bc 200')
+
+
+        polling_loop_cnt = 0
+
+        next_put_list_ix = 0
+        next_call_list_ix = 0
+
+
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=4, close_offset=0)
+
+        if not market_open_flag:
+            put_strike_list = []
+            call_strike_list = []
+
+        print(f'initial streamer polling services market open check, market_open_flag:{market_open_flag}')
+        ps_wait_market_open_cnt = 0
+       
+        while not market_open_flag:
+            ps_wait_market_open_cnt += 1
+          
+            # print(f'streamer: polling services wait to open {ps_wait_market_open_cnt}')
+            if ps_wait_market_open_cnt  % 60 == 59:
+                current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
+                print(f'streamer: polling services: waiting for market to open, current easten time:{current_eastern_hhmmss}')
+            time.sleep(1)
+            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=4, close_offset=0)
+            continue
+
+
+
+        # print(f'streamer: polling services bc 400')
+
+
+        current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
+
+        print(f'streamer polling services: market is now open, current easten time:{current_eastern_hhmmss}')
+            
+
+        get_today_in_epoch()
+        # print(f'streamer: polling services bc 400')
+
+
+        asyncio.run(wait_for_rx_credentials(timeout=30))  # Runs the async function
+        if rx_accessToken == None:
+            # print(f'streamer: polling services bc 500')
+            print(f'streamer: polling services gave up waiting for rx_credentials to be initialized')
+
+
+        # print(f'streamer: polling services bc 410')
+
+
+        while not quit_flag: # innner polling services session loop
+            polling_loop_cnt += 1
+
+            # print(f'streamer: polling services bc 420')
+
+            # print(f'pollig services polling_loop_cnt:{polling_loop_cnt}')
+
+
+            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=4, close_offset=0)
+
+            if not market_open_flag:
+                # print(f'streamer: polling services bc 430')
+                print(f'polling services: market is no longer open, breaking to outer session loop')
+                break
+
+
+
+            
+
+
+
+
+
+
+
+
+
+
+
+            # if len(call_strike_list) > 0:
+            #     with strike_list_lock:
+            #         temp_call_strike_list = call_strike_list
+
+            #     for i in range(4):
+            #         next_sym = temp_call_strike_list[next_call_list_ix]
+            #         # print(f'calling get_opt_quote for call {next_sym}')
+            #         get_opt_quote(next_sym)
+            #         next_call_list_ix += 1
+            #         if next_call_list_ix >= len(temp_call_strike_list):
+            #             next_call_list_ix = 0
+
+            #         time.sleep(0.10)
+
+
+
+            with strike_list_lock:
+                if len(call_strike_list) > 0:
+                    temp_call_strike_list = call_strike_list.copy()
                 else:
-                    decimal_places = 0
+                    temp_call_strike_list = []
 
-                # print(f'The number of decimal places in temp_last is: {decimal_places}')
-
-                if decimal_places > 2:
-                    print(f'The number of decimal places in temp_last is: {decimal_places}')
-
-
-
-
-
-
-
-
+            if len(temp_call_strike_list) > 0:
+                next_call_list_ix = 0  # Local index
+                for i in range(4):
+                    next_sym = temp_call_strike_list[next_call_list_ix]
+                    # print(f'calling get_opt_quote for call {next_sym}')
+                    get_opt_quote(next_sym)
+                    next_call_list_ix += 1
+                    if next_call_list_ix >= len(temp_call_strike_list):
+                        next_call_list_ix = 0
+                    time.sleep(0.10)
 
 
 
-            if 'Total Volume' in item:
-                topic = f"schwab/option/spx/misc/{key_scrub}/volume"
-                publish_quote(topic, item['Total Volume'])
-            if 'Volatility' in item:
-                topic = f"schwab/option/spx/misc/{key_scrub}/volatility"
-                publish_quote(topic, item['Volatility'])
-            if 'Delta' in item:
-                topic = f"schwab/option/spx/greeks/{key_scrub}/delta"
-                publish_quote(topic, item['Delta'])
-            if 'Gamma' in item:
-                topic = f"schwab/option/spx/greeks/{key_scrub}/gamma"
-                publish_quote(topic, item['Gamma'])
-            if 'Theta' in item:
-                topic = f"schwab/option/spx/greeks/{key_scrub}/theta"
-                publish_quote(topic, item['Theta'])
-            if 'Vega' in item:
-                topic = f"schwab/option/spx/greeks/{key_scrub}/vega"
-                publish_quote(topic, item['Vega'])
-            if 'Rho' in item:
-                topic = f"schwab/option/spx/greeks/{key_scrub}/rho"
-                publish_quote(topic, item['Rho'])
-    
 
-# determine whether this message is a heartbeat.  Return True/False along with 
-# the timestamp of the heartbeat.
-def is_heartbeat(json_message):
 
-    heartbeat_flag = False
-    heartbeat_time = None
 
-    if "notify" in json_message:
-        notify_list = json_message["notify"]
-        if isinstance(notify_list, list) and len(notify_list) > 0:
-            # print(f'notify is in json_message')
-            for entry in notify_list:
-                if "heartbeat" in entry:
-                    # print(f'heartbeat is in json_message')
-                    heartbeat_flag = True
-                    # Get the heartbeat value
-                    heartbeat_epoch = entry["heartbeat"]
+
+
+            # if len(put_strike_list) > 0:
+            #     with strike_list_lock:
+            #         temp_put_strike_list = put_strike_list
+
+            #     for i in range(4):
+            #         next_sym = temp_put_strike_list[next_put_list_ix]
+            #         # print(f'calling get_opt_quote for put {next_sym}')
+            #         get_opt_quote(next_sym)
+            #         next_put_list_ix += 1
+            #         if next_put_list_ix >= len(temp_put_strike_list):
+            #             next_put_list_ix = 0
+
+            #         time.sleep(0.10)
+
+
+
+            with strike_list_lock:
+                if len(put_strike_list) > 0:
+                    temp_put_strike_list = put_strike_list.copy()
+                else:
+                    temp_put_strike_list = []
+
+                if len(temp_put_strike_list) > 0:
+                    next_put_list_ix = 0  # Local index
+                    for i in range(4):
+                        next_sym = temp_put_strike_list[next_put_list_ix]
+                        # print(f'calling get_opt_quote for put {next_sym}')
+                        get_opt_quote(next_sym)
+                        next_put_list_ix += 1
+                        if next_put_list_ix >= len(temp_put_strike_list):
+                            next_put_list_ix = 0
+                        time.sleep(0.10)
+
+
+
+
+
+
+
+
+            
+
+
+
+
+            # print(f'streamer: polling services bc 510')
+
+
+            # if polling_loop_cnt % 20 == 2:
+            if polling_loop_cnt % 60 == 2 or len(put_strike_list) == 0 or len(call_strike_list) == 0:
+
+                print(f'2630 trying to get ohlc')
+                # print(f'streamer: polling services bc 520')
+
+                try:
+
+                    returned_ohlc = get_spx_current_today_ohlc()
+
+                    if spx_high == None or spx_low == None or returned_ohlc == None:
+                        print(f'poller new spx_high:{spx_high:.2f}, new spx_low:{spx_low:.2f}')
+
+                    
                     try:
-                        # Convert epoch string to integer and then to datetime
-                        heartbeat_time = datetime.fromtimestamp(int(heartbeat_epoch) / 1000)
-                        # heartbeat_str = heartbeat_time.strftime("%Y-%m-%d %H:%M:%S")
-                        # print(f"Heartbeat datetime: {heartbeat_str}")
-                    except ValueError as e:
-                        print(f"Error converting heartbeat: {e}")
-
-    return heartbeat_flag, heartbeat_time
-        
 
 
+                        # print(f'streamer: polling services bc 530')
+
+                        print(f'2632 trying to get spx chain')
+
+                        spx_chain = get_spx_option_chain()
+                        if spx_chain is not None:
+                            print(f'2634 trying to get call/put list from chain data')
+                            # print(f'streamer: polling services bc 600')
+                            parse_spx_chain(spx_chain)
+
+                        else:
+                            info_str = f'2534 could not get chain data'
+                            print(info_str)
+                            logging.warning(info_str)
 
 
-
-# determine whether this message was confirmation for an "ADD" subscriptions.
-# returns True or False
-def is_message_ADD(json_message):
-    
-    my_service = None
-    my_command = None
-    service_found_flag = False
-    command_found_flag = False
-    
-    # Check for the presence of the keys "service" and "command"
-    if "response" in json_message and isinstance(json_message["response"], list) and len(json_message["response"]) > 0:
-        first_response = json_message["response"][0]
-
-        # if "service" is "LEVELONE_OPTIONS"
-        if "service" in first_response:
-            my_service = first_response["service"]
-            if my_service == "LEVELONE_OPTIONS":
-                service_found_flag = True
-            # print(f'service found: {my_service}')
-
-        # if "command" is "ADD"
-        if "command" in first_response:
-            my_command = first_response["command"]
-            if my_command == "ADD":
-                command_found_flag = True
-            # print(f'command found: {my_command}')
-
-    # print(f'Service: {my_service}')
-    # print(f'Command: {my_command}')
-
-    # if this was an ADD confirmation
-    if service_found_flag and command_found_flag:
-        return True
-    
-    else:
-        # print(f'this was not an ADD message. json_message type:{type(json_message)}. message data:\n{json_message}')
-        # print(f'service_found_flag:{service_found_flag}. command_found_flag:{command_found_flag}')
-        return False
+                    except Exception as e:
+                        info_str = f'2677 get spx chain error:{e}'
+                        print(info_str)
+                        logging.error(info_str)
 
 
-def any_abort_condition():
+                    else:
+                        print(f'poller high/low problem new spx_high:{spx_high}, new spx_low:{spx_low}')
 
-    return_val = False
-    reason_str = ""
+                except Exception as e:
+                    info_str = f'2674 get ohlc error:{e}, could not get SPX o/h/l/c'
+                    print(info_str)
+                    logging.error(info_str)
 
-    if gbl_quit_flag == True:
-        reason_str += f' quit flag detected'
-        return_val = True
-        
-    if gbl_system_error_flag == True:
-        reason_str += f'error flag detected'
-        return_val = True
+            if polling_loop_cnt % 120 == 75:
+                get_today_in_epoch()
+            time.sleep(1)
 
-    if gbl_market_open_flag == False:
-        print(f'any_abort_condition True because market open flag is false')
-        reason_str += f'market close detected'
-        return_val = True
+        # innner polling services session loop
 
-    if gbl_queried_pub_error_flag:
-        print(f'any_abort_condition True because of gbl_queried_pub_error_flag')
-        reason_str += f'queried pub error'
-        return_val = True
 
-    if gbl_streamed_pub_error_flag:
-        print(f'any_abort_condition True because of gbl_streamed_pub_error_flag')
-        reason_str += f'streamed pub error'
-        return_val = True
+    # polling services outer (session) loop
 
-    return return_val, reason_str
+    print("pollig service terminating...")
 
 
 
 
-# TODO CHECK
-def extract_spx_last(item):
-    global gbl_spx_last, last_extracted_spx_time
-
-    try:
-
-        if 'content' in item and isinstance(item['content'], list):
-            for entry in item['content']:
-                if 'key' in entry and entry['key'] == '$SPX' and 'last' in entry:
-                    gbl_spx_last = entry['last']
-                    last_extracted_spx_time = datetime.now()
-                    break
-
-    except Exception as e:
-        print(f'extract_spx_last error:{e}')
-        pass
 
 
-processor_msg_cnt = 0
-def message_processor():
-    global gbl_quit_flag
-    global gbl_system_error_flag
-    global gbl_market_open_flag
-    global processor_msg_cnt
 
-    print(f'message_processor() entry')
+def quote_polling_setup():
+    """ Creates and starts schwab quote thread """
+    global quit_flag
+    quote_polling_thread = threading.Thread(target=polling_services, daemon=True)
+    quote_polling_thread.start()
 
-
-    while gbl_market_open_flag == False:
-        # print(f'294 waiting for market open')
+    while not quit_flag:
         time.sleep(1)
 
+    quote_polling_thread.join()
+    print("schwab quote setup thread exiting.")
 
-    # print(f'in message_processor() when market is open')
 
 
-    equities_cnt = 0
-    options_cnt = 0
-    msg_cnt = 0
+# ------------------ Main Program ------------------
 
+async def main():
+    global quit_flag
 
-    last_message = ""
+    # Start MQTT setup in a separate thread
+    setup_mqtt_thread = threading.Thread(target=mqtt_setup, daemon=True)
+    setup_mqtt_thread.start()
 
-    while True:
+    # Start quote polling setup in a separate thread
+    setup_polling_thread = threading.Thread(target=quote_polling_setup, daemon=True)
+    setup_polling_thread.start()
 
-        abort_flag, abort_msg = any_abort_condition()
+    # Start Schwab setup as an async task
+    schwab_task = asyncio.create_task(schwab_setup())
 
-        if abort_flag == True:
-            print(f'in message_processor() 1, aborting because {abort_msg}')
-            return
 
+    # try:
+    #     while not quit_flag:
+    #         await asyncio.sleep(1)  # Keep main thread alive
+    # except KeyboardInterrupt:
+    #     print("\nCTRL-C detected in main. Setting quit_flag to True.")
+    #     quit_flag = True
 
-        try:
-            last_message = message_queue.get(timeout=1)  # 1 second timeout
 
-        except queue.Empty: 
-
-            # there was a timeout because of no message
-            # we check to see if there is any reason to abort the message processor thread
-            abort_flag, abort_msg = any_abort_condition()
-
-            if abort_flag == True:
-                print(f'in message_processor() 2, aborting because {abort_msg}')
-                return
-
-
-        # if we fall throught to the point we have a message from the queue
-
-        # ignore LOGIN and ADD messages
-
-        if "ADD command succeeded" in last_message:
-            # print(f'got ADD command succeeded message')
-            continue
-
-        if "LOGIN" in last_message:
-            # print(f'got LOGIN message')
-            continue
-
-        if "LOGOUT" in last_message:
-            # print(f'got LOGOUT message')
-            continue
-
-        if "heartbeat" in last_message:
-            # print(f'got heatbeat message')
-            continue
-
-
-        json_message = None
-
-        try:
-            json_message = json.loads(last_message)
-
-            # pretty_json = json.dumps(json_message, indent=2)
-            # print(f'raw json_message:\n{pretty_json}')
-
-            # quotes are indicated by 'data' in the message
-            if 'data' in json_message:
-
-                json_message = translate_quote_key_names(json_message)
-                # pretty_json = json.dumps(json_message, indent=2)
-                # print(f'after key translation, pretty json_message:\n<{pretty_json}>\n')
-
-                publish_raw_streamed_quote(json_message)
-
-                for item in json_message.get("data", []):
-                    service = item.get("service")
-                    if service == "LEVELONE_EQUITIES":
-                        # TODO CHECK
-                        extract_spx_last(item)
-                        # print(f'942 gbl_spx_last:{gbl_spx_last} extracted at {last_extracted_spx_time}')
-                        # print()
-                        # print()
-
-
-
-
-
-
-
-
-
-                # for item in json_message.get("data", []):
-                #     service = item.get("service")
-                    
-                #     if service == "LEVELONE_EQUITIES":
-                #         # print(f'LEVELONE_EQUITIES found, item:\n<{item}>\n\n')
-                #         # equities_cnt += 1
-                #         # print(f'LEVELONE_EQUITIES found {equities_cnt}')
-                #         publish_levelone_equities(item)
-                    
-                #     elif service == "LEVELONE_OPTIONS":
-                #         # print(f'LEVELONE_OPTIONS found, item:\n<{item}>\n\n')
-                #         # options_cnt += 1
-                #         # print(f'LEVELONE_OPTIONS found {options_cnt}')
-                #         publish_levelone_options(item)
-                #         pass
-
-            # else the message was something other than a quote or one of the other messages trapped above
-
-            else:
-                # print(f'unsupported message')
-                pretty_json = json.dumps(json_message, indent=2)
-                print(f'unsupported and unpublished message:\n{pretty_json}\n')
-                pass
-                
-
-        except json.JSONDecodeError as e:
-
-            # temp_str = f'284 message json.loads error, e type:{type(e)}, value:{e}'
-            # print(temp_str)
-
-            if json_message == None:
-                # we ignore json_message == None
-                pass
-
-            else:
-                temp_str = f'286 message json.loads error, e type:{type(e)}, value:{e}'
-                print(temp_str)
-                pass
-
-            
-
-        time.sleep(0.001)
-
-
-    
-
-def extract_strike_from_sym(sym):
-    # print(f'946 sym type:{type(sym)}, value:{sym}')  
-
-    # Extract the 4-digit strike price value
-    my_strike = sym[-7:-3]
-    # print(f'my_strike: {my_strike}')
-
-    return my_strike            
-
-
-def build_option_tables2(option_syms, option_type):
-    global put_strike_tbl
-    global call_strike_tbl
-
-    if option_type == "PUT":
-        with opt_tbl_lock:
-            put_strike_tbl = []
-        # print(f'in build_option_tables2(), type:{option_type}, zeroed out put_strike_tbl')
-
-    if option_type == "CALL":
-        with opt_tbl_lock:
-            call_strike_tbl = []
-        # print(f'in build_option_tables2(), type:{option_type}, zeroed out call_strike_tbl')
-
-    for item in option_syms:
-        # print(f'294 item:<{item}>')
-        strike = extract_strike_from_sym(item)
-        strike_int = int(strike)
-        # print(f'returned strike:{strike}, strike_int:{strike_int}')
-
-        if option_type == "CALL":
-            new_call_option = {"Type": "CALL", "Strike": strike_int, "Bid": 0.0, "Ask": 0.0, "Last": 0.0, "Symbol": item}
-            # print(f'883 new call to add:{new_call_option}')
-            with opt_tbl_lock:
-                call_strike_tbl.append(new_call_option)
-
-        elif option_type == "PUT":
-            new_put_option = {"Type": "PUT", "Strike": strike_int, "Bid": 0.0, "Ask": 0.0, "Last": 0.0, "Symbol": item}
-            # print(f'884 new put to add:{new_put_option}')
-            with opt_tbl_lock:
-                put_strike_tbl.append(new_put_option)
-
-
-
-    # if option_type == "CALL":
-    #     print(f'end of build_option_tables2(), type:{option_type}, call_strike_tbl len:{len(call_strike_tbl)}')
-
-
-    # if option_type == "PUT":
-    #     print(f'end of build_option_tables2(), type:{option_type}, put_strike_tbl len:{len(put_strike_tbl)}')
-
-
-    pass
-
-
-
-# Build the list of call or put options to be used for subcription to the schwab api streaming quotes
-def build_option_tables(option_map, option_type):
-    global put_strike_tbl
-    global call_strike_tbl
-
-    # initialize the table that we are buildling
-
-    if option_type == "PUT":
-        with opt_tbl_lock:
-            put_strike_tbl = []
-
-    if option_type == "CALL":
-        with opt_tbl_lock:
-            call_strike_tbl = []
-
-
-    for expiration, strikes in option_map.items():
-        for strike, options in strikes.items():
-            for option in options:
-
-                # print(f'strike type:{type(strike)}')
-                strike_int = int(float(strike))
-                last_fl = float(option['last'])
-                my_opt_symbol = option['symbol']
-                my_bid = option['bid']
-                my_ask = option['ask']
-                # print(f"{option_type} {strike_int} Symbol: {option['symbol']}, Last: {option['last']}")
-                # print(f"{option_type} {strike_int} Symbol: {option['symbol']}, Last: {last_fl}")
-                # print(f'{option_type} {strike_int} Symbol: {option['symbol']}, Last: {last_fl:.2f}')
-                if option_type == "CALL":
-                    # print(f'this was a CALL strike') 
-                    new_call_option = {"Type": "CALL", "Strike": strike, "Bid": my_bid, "Ask": my_ask, "Last": last_fl, "Symbol": my_opt_symbol}
-                    # print(f'492 new_call_option:{new_call_option}')
-                    with opt_tbl_lock:
-                        call_strike_tbl.append(new_call_option)
-                    # print(f'call_strike_tbl:\n{call_strike_tbl}')
-
-                elif option_type == "PUT":
-                    # print(f'this was a PUT strike') 
-                    new_put_option = {"Type": "PUT", "Strike": strike, "Bid": my_bid, "Ask": my_ask, "Last": last_fl, "Symbol": my_opt_symbol}
-                    # print(f'592 new_put_option:{new_put_option}')
-                    with opt_tbl_lock:
-                        put_strike_tbl.append(new_put_option)
-                    # print(f'put_strike_tbl:\n{put_strike_tbl}')
-                    
-
-def get_eastern_weekday_time():
-
-    eastern = pytz.timezone('US/Eastern')
-
-    eastern_time = datetime.now(eastern)
-    day_of_week_str = eastern_time.strftime('%A')
-    date_str = eastern_time.strftime('%m/%d/%y')
-
-    current_time = datetime.now(eastern)
-    eastern_time_str = current_time.strftime('%H:%M:%S')
-    return_str = f'{day_of_week_str} {date_str} {eastern_time_str} (Eastern)'
-
-    return return_str
-
-    
-
-
-
-
-
-
-def is_market_open():
-    global gbl_market_open_flag
-
-    now = datetime.now(timezone.utc)
-    # print(f'934 now type:{type(now)}, value:{now}')
-
-    # Determine if the current day is Monday through Friday
-    day_of_week = now.weekday()
-    # Convert the integer to the corresponding weekday name 
-    weekday_name = calendar.day_name[day_of_week]
-    is_weekday = 0 <= day_of_week <= 4
-
-    if is_weekday:
-        # print("Today is a weekday (Monday through Friday).")
-        weekday_flag = True
-    else:
-        # print("Today is not a weekday (Monday through Friday).")
-        weekday_flag = False
-
-    # set Eastern Time Zone
-    eastern = pytz.timezone('US/Eastern')
-
-    # Get the current time in Eastern Time
-    current_time = datetime.now(eastern)
-
-    
-
-    # set markets daily start/end times
-    start_time = current_time.replace(hour=9, minute=30, second=10, microsecond=0)
-    end_time = current_time.replace(hour=15, minute=59, second=50, microsecond=0)
-
-
-    # eastern_time_str = current_time.strftime('%H:%M:%S')
-    # end_time_str = end_time.strftime('%H:%M:%S')
- 
-
-    if weekday_flag == False or current_time < start_time or current_time > end_time:
-        # print(f'Market is not open.  Current day of week: {weekday_name}.  Current eastern time: {eastern_time_str}')
-        gbl_market_open_flag = False
-        return False
-    
-    # print(f'Market IS open.  Current day of week: {weekday_name}.  Current eastern time: {eastern_time_str}')
-    
-
-    gbl_market_open_flag = True
-
-    return True
-
-
-
-
-def wait_for_market_to_open():
-
-    global gbl_quit_flag
-    global gbl_system_error_flag
-    global gbl_market_open_flag
-
-    SECONDS_BETWEEN_CHECKS = 5
-    ITERATIONS_BETWEEN_DISPLAY = int(60 / SECONDS_BETWEEN_CHECKS)
-
-
-    # loop until market is open 
-    market_wait_cnt = 0
-    throttle_time_display = ITERATIONS_BETWEEN_DISPLAY
-    while True:
-        # print(f'1 wait market cnt:{market_wait_cnt}')
-        market_wait_cnt += 1
-
-        market_open_flag, current_eastern_time, seconds_to_next_minute = \
-        market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=MARKET_CLOSE_OFFSET)
-        
-        if market_open_flag == True:
-        # if is_market_open():
-
-            gbl_market_open_flag = True
-
-            current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
-            current_eastern_day = current_eastern_time.strftime('%A')
-
-            # print(f'is_market_open() returned True, exiting wait_for_market_to_open()')
-            print(f'Market is open. Current Eastern: {current_eastern_day}, {current_eastern_hhmmss}')
-            return
-        
-        throttle_time_display += 1
-        if throttle_time_display >= ITERATIONS_BETWEEN_DISPLAY:
-            print(f'streamer: Market is not open. Current: {get_eastern_weekday_time()}')
-            throttle_time_display = 0
-        
-        
-        time.sleep(SECONDS_BETWEEN_CHECKS)
-
-        if gbl_quit_flag == True or gbl_system_error_flag == True:
-            return
-
-
-
-
-def get_today_in_epoch():
-    # Calculate the time in milliseconds since the UNIX epoch
-    now = datetime.now(timezone.utc)
-
-    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
-    milliseconds_since_epoch = int((now - epoch).total_seconds() * 1000.0)
-
-    # Today's date and time in milliseconds since the UNIX epoch
-    # print("Today's date:", now.strftime('%Y-%m-%d %H:%M:%S %Z'))
-    # print("Milliseconds since UNIX epoch:", milliseconds_since_epoch)
-
-    return  milliseconds_since_epoch
-
-
-def get_current_spx(client, milliseconds_since_epoch):
-    global gbl_system_error_flag
-    global gbl_market_open_flag
-    global waiting_for_quote
-
-    global schwab_client_lock
-
-    open_fl = None
-    high_fl = None
-    low_fl = None
-    close_fl = None
-
-    retry_count = 0
-    MAX_RETRIES = 5
-    spx_history = None
-    
-
-
-    # Loop until we have a good response for SPX price history
-    while True:
-
-        market_open_flag, current_eastern_time, seconds_to_next_minute = \
-            market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=MARKET_CLOSE_OFFSET)
-
-        if market_open_flag != True:
-        # if is_market_open() != True:
-
-            print(f'in get_current_spx(), market is not open')
-            gbl_market_open_flag = False
-            return None, None, None, None
-        
-        if gbl_system_error_flag == True:
-            return None, None, None, None
-        
-
-
-        try:
-            # with schwab_client_lock:
-            waiting_for_quote = True
-            spx_history = client.price_history(
-                "$SPX", 
-                periodType='month',
-                period=1,
-                frequencyType='daily',
-                frequency=1,
-                # startDate='1731055026568',
-                # endDate='1731055026568'
-                startDate=milliseconds_since_epoch,
-                endDate=milliseconds_since_epoch
-                ).json()
-            
-            waiting_for_quote = False
-                
-        except Exception as e:
-            waiting_for_quote = False
-            current_time = datetime.now()
-            time_str = current_time.strftime('%H:%M:%S')
-            print(f"112SEF spx_history = client.price_history: An error occurred: {e} at {time_str}")
-
-
-            if spx_history == None:
-                retry_count += 1
-                if retry_count > MAX_RETRIES:
-                    temp_str = f"202SEF expired retries in get_current_spx()"
-                    print(temp_str)
-                    logging.error(temp_str)
-
-                    gbl_system_error_flag = True
-                    return None, None, None, None
-                
-                time.sleep(0.25)
-                current_time = datetime.now()
-                time_str = current_time.strftime('%H:%M:%S')
-                print(f"113SEF retrying at {time_str}") 
-
-                continue
-
-
-            gbl_system_error_flag = True
-            continue
-        
-        # print(f'spx_history raw type:{type(spx_history)}, data:\n{spx_history}')
-        
-        # pretty_json = json.dumps(spx_history, indent=2)
-        # print(f'history for $SPX:\n{pretty_json}')
-
-
-        # Extract the first candle data
-        try:
-            # first_candle = spx_history["fail"][0] # force error that candles was not found
-            first_candle = spx_history["candles"][0]
-            # print(f'Found First candle:\n{first_candle}')
-            break
-
-        except KeyError:
-            temp_str = f"114SEF Error while looking for SPX candle: 'candles' key not found in spx_history"
-            print(temp_str)
-            pretty_json = json.dumps(spx_history, indent=2)
-            print(f'spx_history:\n{pretty_json}\n\n')
-            logging.error(temp_str)
-            gbl_system_error_flag = True
-            return open_fl, high_fl, low_fl, close_fl
-        
-        except IndexError:
-            current_time = datetime.now()
-            time_str = current_time.strftime('%H:%M:%S')
-            temp_str = f"116SEF Error while looking for SPX candle at {time_str}: 'candles' list is empty"
-            print(temp_str)
-            pretty_json = json.dumps(spx_history, indent=2)
-            print(f'spx_history:\n{pretty_json}\n\n')
-            logging.error(temp_str)
-            gbl_system_error_flag = True
-            return open_fl, high_fl, low_fl, close_fl
-
-        except Exception as e:
-            temp_str = f'118SEF An unexpected error occurred while looking for SPX candle: {e}'
-            print(temp_str)
-            pretty_json = json.dumps(spx_history, indent=2)
-            print(f'spx_history:\n{pretty_json}\n\n')
-            logging.error(temp_str)
-            gbl_system_error_flag = True
-            return open_fl, high_fl, low_fl, close_fl
-
-
-
-    # Save the open, high, low, and close values as float variables
-    open_fl = float(first_candle["open"])
-    high_fl = float(first_candle["high"])
-    low_fl = float(first_candle["low"])
-    close_fl = float(first_candle["close"])
-
-    # Print the values to verify
-    # print(f'A Open: {open_fl}')
-    # print(f'A High: {high_fl}')
-    # print(f'A Low: {low_fl}')
-    # print(f'A Close: {close_fl}')
-
-    return open_fl, high_fl, low_fl, close_fl
-
-
-# check_for_subscribe_update()
-# if needed (if SPX has wandered too far since the last option subseciptiions)
-# then re-subscribe
-last_spx_check_time = None
-def init_check_spx_last(client):
-    global last_spx_check_time
-    global last_extracted_spx_time
-    global gbl_spx_last
-
-    last_extracted_spx_time = last_spx_check_time = datetime.now()
-
-    while True:
-        try:
-            spx_init = client.quote("$SPX").json()
-            gbl_spx_last = spx_init['$SPX']['quote']['lastPrice']
-
-            # print(f'spx_init data:\n{spx_init}')           
-            # print(f'gbl_spx_last:{gbl_spx_last}')
-            break
-
-        except Exception as e:
-            print(f'error trying to initialize SPX quote:{e}')
-            time.sleep(0.2)
-            continue
-
-
-def check_for_subscribe_update(client):
-    global last_spx_check_time
-    global gbl_close_fl
-    global gbl_resubscribe_needed
-    global gbl_system_error_flag
-    global last_extracted_spx_time
-
-    CHECK_INTERVAL = 20
-
-    # Get the current time
-    current_time = datetime.now()
-    elapsed_time = (current_time - last_spx_check_time).total_seconds()
-
-
-    elapsed_from_extract = (current_time - last_extracted_spx_time).total_seconds()
-
-    # TODO CHECK consider using the extracted gbl_spx_last instead of get_current_spx
-    # print(f'in check_for_subscribe_update, gbl_spx_last:{gbl_spx_last} extracted at {last_extracted_spx_time}')
-    # print(f'elapsed from extract:{elapsed_from_extract}')
-    # print(f'current_time:{current_time}, elapsed_time:{elapsed_time},  gbl_close_fl:{gbl_close_fl}')
-
-    # If 30 seconds have passed since the last SPX price check
-    if elapsed_time >= CHECK_INTERVAL:
-
-        # print(f'checking for subscribe update, elapsed time: {elapsed_time}')
-
-        # Update the last SPX check time
-        last_spx_check_time = current_time
-        # print(f'Updating last_spx_check_time to {last_spx_check_time}')
-
-
-
-
-
-
-        # TODO CHECK  This was commented out
-        # open, high, low, close = get_current_spx(client, todays_epoch_time)
-
-        # if open == None or high == None or low == None or close == None:
-        #     temp_str = f"120SEF in check_for_subscribe_update() get_current_spx returned one or more 'None' value(s)"
-        #     print(temp_str)
-        #     logging.error(temp_str)
-        #     gbl_system_error_flag = True
-        #     return
-
-        # TODO CHECK and replaced by this
-        close = gbl_spx_last
-        # print(f'340NC new close:{close}')
-
-
-
-        spx_change = abs(gbl_close_fl - close)
-        # print(f'spx_change type:{type(spx_change)}, value:{spx_change}')
-        # print(f'spx_change:{spx_change}')
-
-        
-
-        if spx_change >= 0.5:
-
-            # print(f'340RS Time to re-subscribe spx_change:{spx_change}')
-            gbl_close_fl = close
-            gbl_resubscribe_needed = True
-
-            # with opt_tbl_lock:
-            #     print(f'put_strike_tbl:\n{put_strike_tbl}\n')
-            #     print(f'call_strike_tbl:\n{call_strike_tbl}\n')
-            #     pass
-
-
-
-
-            pass
-
-    else:
-        pass
-        # print(f'not time for SPX check, elapsed:{elapsed_time}, Last check: {last_spx_check_time}, current time:{current_time}')
-
-
-
-def build_strike_lists(client):
-    global todays_epoch_time
-    global gbl_close_fl
-    global gbl_system_error_flag
-
-
-    
-
-
-    todays_epoch_time = get_today_in_epoch()
-    # print(f'todays_epoch_time type:{type(todays_epoch_time)}, value{todays_epoch_time}')
-
-
-
-
-    spx_open, spx_high, spx_low, spx_close = get_current_spx(client, todays_epoch_time)
-
-    if spx_open == None or spx_high == None or spx_low == None or spx_close == None:
-        current_time = datetime.now()
-        time_str = current_time.strftime('%H:%M:%S')
-        temp_str = f'122SEF in build_strike_lists() get_current_spx returned one or more None value(s) at {time_str}'
-        print(temp_str)
-        logging.error(temp_str)
-        gbl_system_error_flag = True
-        return None, None
-
-
-
-    # print(f'SPX O type:{type(spx_open)}, O/H/L/C:{spx_open}/{spx_high}/{spx_low}/{spx_close}')
-
-    # gbl_open_fl = spx_open
-    # gbl_high_fl = spx_high
-    # gbl_low_fl = spx_low
-    gbl_close_fl = spx_close
-
-    # print(f'C spx_open: {spx_open}')
-    # print(f'C spx_high: {spx_high}')
-    # print(f'C spx_low: {spx_low}')
-    # print(f'C Close: {gbl_close_fl}')
-
-
-    # print(f'in build_strike_lists(), spx_low:{spx_low}, spx_high:{spx_high}')
-
-    STRIKE_RANGE_OFFSET = 250
-
-    # Adjust spx_low and spx_high to be divisible by 5
-    spx_low_strike = int(spx_low // 5 * 5)
-    # spx_put_low_adjusted = spx_low_strike - 150
-    spx_put_low_adjusted = spx_low_strike - STRIKE_RANGE_OFFSET
-    spx_high_strike = int((spx_high // 5 + 1) * 5)  # Adjust to the next higher strike
-    # spx_call_high_adjusted = spx_high_strike + 150
-    spx_call_high_adjusted = spx_high_strike + STRIKE_RANGE_OFFSET
-
-    # print(f'spx_put_low_adjusted:{spx_put_low_adjusted}, spx_low_strike:{spx_low_strike}, spx_high_strike:{spx_high_strike}')
-
-    # Generate put_strikes
-    put_strikes = [f"{strike:04d}" for strike in range(spx_put_low_adjusted, spx_high_strike + 5, 5)]
-    # print(f'put_strikes:\n{put_strikes}')
-
-
-    # print(f'spx_low_strike:{spx_low_strike}, spx_high_strike:{spx_high_strike}, spx_call_high_adjusted:{spx_call_high_adjusted}')
-    
-    # Generate call_strikes
-    call_strikes = [f"{strike:04d}" for strike in range(spx_low_strike, spx_call_high_adjusted + 5, 5)]
-    # print(f'spx_call_list:\n{call_strikes}')
-
-
-    return put_strikes, call_strikes
-
-
-
-
-    
-def subscribe_to_schwab(client):
-
-
-
-    # generate the list of put and call strikes to use
-    put_strikes, call_strikes = build_strike_lists(client)
-
-    if put_strikes == None or call_strikes == None:
-        return
-    
-
-    # print(f'AA put_strikes type:{type(put_strikes)}, data:\n{put_strikes}')
-    # print(f'AA call_strikes type:{type(call_strikes)}, data:\n{call_strikes}')
-
-    
-    # Get the current date in yymmdd format
-    current_date = datetime.today().strftime('%y%m%d')
-    # print(f'792 current_date type:{(type(current_date))}, value:{current_date}')
-
-    # Create the list of put strike symbols
-    put_strike_symbols = [f'SPXW  {current_date}P0{str(strike).zfill(4)}000' for strike in put_strikes]
-    # print(f'put strike symbols: {put_strike_symbols}')
-    build_option_tables2(put_strike_symbols, "PUT")
-
-
-    # Create the list of put strike symbols
-    call_strike_symbols = [f'SPXW  {current_date}C0{str(strike).zfill(4)}000' for strike in call_strikes]
-    # print(f'call strike symbols: {call_strike_symbols}')
-    build_option_tables2(call_strike_symbols, "CALL")
-
-
-
-last_put_index = 9999
-last_call_index = 9999
-
-waiting_for_quote = False
-
-def update_quote(client):
-    global put_strike_tbl
-    global call_strike_tbl
-    global last_put_index 
-    global last_call_index 
-    global gbl_system_error_flag
-    global time_since_last_queried_pub
-    global waiting_for_quote
-
-
-    global schwab_client_lock
-
-    current_time = datetime.now()
-    time_str = current_time.strftime('%H:%M:%S')
-
-    if time_since_last_queried_pub > 2:
-        print(f'in update_quote and time_since_last_queried_pub:{time_since_last_queried_pub} at {time_str}')
-
-
-    basic_topic = "schwab/option/spx/basic/"
-
-    
-
-    size_put_list = len(put_strike_tbl)
-    size_call_list = len(call_strike_tbl)
-    # print(f'size_put_list:{size_put_list}, size_call_list:{size_call_list}')
-    # print(f'put_strike_tbl type:{type(put_strike_tbl)}, data:\n{put_strike_tbl}')
-
-    # print(f'size_put_list type:{type(size_put_time_since_last_queried_publist)}, value:{size_put_list}')
-    # print(f'last_put_index type:{type(last_put_index)}, value:{last_put_index}')
-
-    # print(f'prev last_put_index:{last_put_index}, prev last_call_index:{last_call_index}, ')
-
-
-    last_put_index += 1
-    # print(f'incremented last_put_index:{last_put_index}')
-    
-    if last_put_index >= size_put_list:
-        last_put_index = 0
-        # print(f'223A resetting last_put_index')
-    else:
-        # print(f'223B incremented last_put_index:{last_put_index} is less than size_put_list:{size_put_list}')
-        pass
-
-    last_call_index += 1
-
-    if last_call_index >= size_call_list:
-        last_call_index = 0
-    else:
-        pass
-
-    # print(f' new last_put_index:{last_put_index}, size_put_list:{size_put_list}')
-    # print(f' new last_call_index:{last_call_index}, size_call_list:{size_call_list}')  
-
-    if size_put_list > 0:
-        with opt_tbl_lock:
-            current_put_item = put_strike_tbl[last_put_index]
-
-        if 'Symbol' in current_put_item:
-            put_opt_sym = current_put_item['Symbol']
-            # print(f'need to get and publish quote for put_opt_sym:{put_opt_sym}')
-
-
-
-            put_quote = None
-
-            try:
-                # with schwab_client_lock:
-                waiting_for_quote = True
-                put_quote = client.quote(put_opt_sym).json()
-                waiting_for_quote = False
-                
-            except Exception as e:
-                waiting_for_quote = False
-                if put_quote == None:
-                    # return without flagging a system error
-                    # print(f'put_quote is None for {put_opt_sym}, error message:{e}, returning without flagging a system error at {time_str}')
-                    # print(f'e type:{type(e)}, e message:{e}')
-
-                    # an Expective value error is returned when this option does not exist
-                    if "Expecting value:" in str(e):
-                        # TODO: prune non-existent itmes fom the put and call lists
-                        # print(f'703 The string <Expecting value:> WAS found in e, so {put_opt_sym} is assumed to not exist')
-                        time_since_last_queried_pub = 0
-
-                    if "Read timed out" in str(e):
-                        print(f'put quote timeout error at {time_str}, returning')
-                        time_since_last_queried_pub = 0
-                        return
-
-      
-                else:
-                
-                    print(f'30 client.quote exception:{e} for puts 30: put_quote type:{type(put_quote)}, data:\n{put_quote}')
-                
-                    gbl_system_error_flag = True
-                    return
-            
-            # print(f'dbg client.quote 20: put_quote type:{type(put_quote)}, data:\n{put_quote}')
-
-            if put_quote != None:
-                publish_raw_queried_quote(put_quote)
-
-            else:
-                if time_since_last_queried_pub > 1:
-                    print(f'294p put quote not published, time_since_last_queried_pub:{time_since_last_queried_pub}')
-
-
-            # print(f'put_quote type:{type(put_quote)}, data:\n')
-            # pprint.pprint(put_quote)
-
-            # # Save 'askPrice', 'bidPrice', and 'closePrice' in separate variables
-            # # Save 'askPrice', 'bidPrice', and 'closePrice' in separate variables
-            # key = list(put_quote.keys())[0]
-            # # print(f'key:{key}')
-            # put_ask = put_quote[key]['quote']['askPrice']
-            # # print(f'put_ask:{put_ask}')
-            # put_bid = put_quote[key]['quote']['bidPrice']
-            # # print(f'put_bid:{put_bid}')
-            # put_last = put_quote[key]['quote']['closePrice']
-            # # print(f'put_last:{put_last}')
-            # put_symbol = put_quote[key]['symbol']
-            # # print(f'put_symbol:{put_symbol}')
-            # stripped_put_sym = put_symbol.replace(" ", "")
-            # # print(f'stripped_put_sym:{stripped_put_sym}')
-
-            # pub_topic = basic_topic + stripped_put_sym + "/bid"
-            # # print(f' bid pub_topic:{pub_topic}')
-            # publish_quote(pub_topic, put_bid)
-
-            # pub_topic = basic_topic + stripped_put_sym + "/ask"
-            # # print(f' ask pub_topic:{pub_topic}')
-            # publish_quote(pub_topic, put_ask)
-
-            # # pub_topic = basic_topic + stripped_put_sym + "/last"
-            # # # print(f'last pub_topic:{pub_topic}')
-            # # publish_quote(pub_topic, put_last)
-
-
-
-
-
-    if size_call_list > 0:
-        with opt_tbl_lock:
-            current_call_item = call_strike_tbl[last_call_index]
-
-        if 'Symbol' in current_call_item:
-            call_opt_sym = current_call_item['Symbol']
-            # print(f'need to get and publish quote for call_opt_sym:{call_opt_sym}')
-
-
-            call_quote = None
-
-            try:
-                # with schwab_client_lock:
-                waiting_for_quote = True
-                call_quote = client.quote(call_opt_sym).json()
-                waiting_for_quote = False
-                
-            except Exception as e:
-                waiting_for_quote = False
-                # print(f'956 client.quote for {call_opt_sym} returned error {e}')
-
-                if call_quote == None:
-                    # return without flagging a system error
-                    # print(f'call_quote type:{call_quote}, data:{call_quote}')
-                    # print(f'call_quote is None for {call_opt_sym}, error message:{e}, returning without flagging a system error at {time_str}')
-                    # print(f'e type:{type(e)}, e message:{e}')
-                    
-
-                    if "Expecting value:" in str(e):
-                        # TODO: prune non-existent itmes fom the put and call lists
-                        # print(f'803 The string <Expecting value:> WAS found in e, so {call_opt_sym} is assumed to not exist')
-                        time_since_last_queried_pub = 0
-
-                    if "Read timed out" in str(e):
-                        print(f'call quote timeout error at {time_str}, returning')
-                        time_since_last_queried_pub = 0
-                        return
-
-                  
-
-                else:
-                    print(f'60 client.quote exception:{e} for calls 60: call_quote type:{type(call_quote)}, data:\n{call_quote}')
-                    gbl_system_error_flag = True
-                    return
-            
-            # print(f'dbg client.quote 40: call_quote type:{type(call_quote)}, data:\n{call_quote}')
-
-            if call_quote != None:
-                publish_raw_queried_quote(call_quote)
-
-            else:
-                if time_since_last_queried_pub > 1:
-                    print(f'294c call quote not published, time_since_last_queried_pub:{time_since_last_queried_pub}')
-            
-
-            # print(f'call_quote type:{type(call_quote)}, data:\n')
-            # pprint.pprint(call_quote)
-
-
-
-            # # Save 'askPrice', 'bidPrice', and 'closePrice' in separate variables
-            # # Save 'askPrice', 'bidPrice', and 'closePrice' in separate variables
-            # key = list(call_quote.keys())[0]
-            # # print(f'key:{key}')
-            # call_ask = call_quote[key]['quote']['askPrice']
-            # # print(f'call_ask:{call_ask}')
-            # call_bid = call_quote[key]['quote']['bidPrice']
-            # # print(f'cll_bid:{call_bid}')
-            # call_last = call_quote[key]['quote']['closePrice']
-            # # print(f'call_last:{call_last}')
-            # call_symbol = call_quote[key]['symbol']
-            # # print(f'call_symbol:{call_symbol}')
-            # stripped_call_sym = call_symbol.replace(" ", "")
-            # # print(f'stripped_call_sym:{stripped_call_sym}')
-
-            # pub_topic = basic_topic + stripped_call_sym + "/bid"
-            # # print(f' bid pub_topic:{pub_topic}')
-            # publish_quote(pub_topic, call_bid)
-
-            # pub_topic = basic_topic + stripped_call_sym + "/ask"
-            # # print(f' ask pub_topic:{pub_topic}')
-            # publish_quote(pub_topic, call_ask)
-
-            # # pub_topic = basic_topic + stripped_call_sym + "/last"
-            # # # print(f'last pub_topic:{pub_topic}')
-            # # publish_quote(pub_topic, call_last)
-
-
-
-def mqtt_on_connect(client, userdata, flags, reason_code, properties=None):
-    global gbl_system_error_flag
-
-    if reason_code == 0:
-        print("MQTT client connected")
-
-    else:
-        print(f"128SEF MQTT client Failed to connect, return code {reason_code}")
-        gbl_system_error_flag = True
-
-
-def supervisor():
-    global time_since_last_stream_pub
-    global time_since_last_queried_pub
-    global gbl_queried_pub_error_flag
-    global gbl_streamed_pub_error_flag
-    global gbl_system_error_flag
-
-
-    print(f'supervisor() entry')
-
-    FORCE_STREAMER_TIMEOUT = False
-    FORCE_QUERIED_TIMEOUT = False
-    force_cnt = 0
-
-
-    while gbl_market_open_flag == False:
-        # print(f'294 waiting for market open')
-        time.sleep(1)
-
-    time.sleep(10)
-
-    time_since_last_stream_pub = 0
-    time_since_last_queried_pub = 0
-
-
-    while True:
-
-        abort_flag, abort_msg = any_abort_condition()
-
-        if abort_flag == True:
-            print(f'supervisor(), abort flag is true ({abort_msg})')
-            return
-        
-
-        time_since_last_stream_pub += 1
-
-        if waiting_for_quote != True:
-            time_since_last_queried_pub += 1
-        
-        else:
-            pass
-            # print(f'in supervisor, waiting for quote is True')
-
-
-
-        # print(f'time since stream pub:{time_since_last_stream_pub}')
-        # print(f'time since queried pub:{time_since_last_queried_pub}')
-
-        SUPERVISOR_TIMEOUT = 10
-
-
-        # logic to test streamer pub queried pub timeouts
-        # force_cnt += 1
-        # print(f'force_cnt:{force_cnt}')
-        # if FORCE_STREAMER_TIMEOUT == True:
-        #     if force_cnt > SUPERVISOR_TIMEOUT:
-        #         time_since_last_stream_pub = SUPERVISOR_TIMEOUT + 2
-        # if FORCE_QUERIED_TIMEOUT == True:
-        #     if force_cnt > SUPERVISOR_TIMEOUT:
-        #         time_since_last_queried_pub = SUPERVISOR_TIMEOUT + 2
-
-
-        if time_since_last_queried_pub > SUPERVISOR_TIMEOUT:
-            current_time = datetime.now()
-            time_str = current_time.strftime('%H:%M:%S')
-            gbl_queried_pub_error_flag = True
-            gbl_system_error_flag = True
-            info_str = f'Query supervision timeout at {time_str}, time_since_last_queried_pub:{time_since_last_queried_pub}'
-            logging.error(info_str)
-            print(info_str)
-            return
-        
-        if time_since_last_stream_pub > SUPERVISOR_TIMEOUT:
-            current_time = datetime.now()
-            time_str = current_time.strftime('%H:%M:%S')
-            gbl_streamed_pub_error_flag = True
-            gbl_system_error_flag = True
-            info_str = f'Streamer supervision timeout at {time_str}, time_since_last_stream_pub:{time_since_last_stream_pub}'
-            logging.error(info_str)
-            print(info_str)
-            return
-
-        
-        
-        
-        time.sleep(1)
-
-
-def get_schab_client():
-    global gbl_schwab_client
-    return gbl_schwab_client
-
-
-def system_loop():
-    global gbl_quit_flag
-    global gbl_system_error_flag
-    global mqtt_client_tx
-    global gbl_schwab_client
-
-    # global gbl_open_fl
-    # global gbl_high_fl
-    # global gbl_low_fl
-    global gbl_close_fl
-    global todays_epoch_time
-    global gbl_system_error_flag
-    global gbl_market_open_flag
-    global gbl_version
-
-
-    gbl_system_error_flag = False
-
-
-    gbl_version = get_version()
-    temp_str = f'schwab-stream app version {gbl_version}'
-    print(f'\n{temp_str}\n')
-    logging.info(temp_str)
-
-
-    # print(f'835-100 system_loop(), entering wait for market to open')
-
-    wait_for_market_to_open()
-    if gbl_quit_flag == True or gbl_system_error_flag == True:
-        return
-    
-    # print(f'835-105 system_loop(), market is now open')
-    
-
-    app_key, secret_key, my_tokens_file = load_env_variables()
-
-    # create schwabdev client
-    create_client_count = 0
-
-
-    sys_loop_count = 0
-    # while we try to create a schwabdev client
-    while True:
-        try:
-            client = schwabdev.Client(app_key, secret_key, tokens_file=my_tokens_file)
-            gbl_schwab_client = client
-            break
-
-        except Exception as e:
-            create_client_count += 1
-            info_str = f'client = schwabdev.Client: An error occurred: {e}.  Attempt # {create_client_count}. Retrying'
-            print(info_str)
-            logging.error(info_str)
-            gbl_system_error_flag = True
-            time.sleep(2)
-            return
-            
-    # while we try to create a schwabdev client
-
-    # print(f'835-110 system_loop(), schwabdev client created')
-
-    print(f"schwabdev client created")
-
-    
-
-    # print(f'835-120 system_loop(), attemting to create mqtt client')
-
-    # Create an MQTT client_tx
     try:
-        # mqtt_client_tx = mqtt.Client()
-        mqtt_client_tx = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        while not quit_flag:
+            await asyncio.sleep(1)  # Keep main thread alive
 
-    except Exception as e:
-        print(f"mqtt_client_tx = mqtt.Client(): An error occurred: {e}")
-        return
-    
-    # print(f'mqtt_client_tx: {mqtt_client_tx}')
+    except KeyboardInterrupt:
+        info_str = f'\n3310 CTRL-C detected in main. Setting quit_flag to True.'
+        logging.error(info_str)
+        print(info_str)
+        quit_flag = True
 
-    # print(f'835-130 system_loop(), created mqtt client')
+    except asyncio.CancelledError:
+        info_str = f'3320 Asyncio task cancelled. Cleaning up...'
+        logging.error(info_str)
+        print(f'\n{info_str}')
+        quit_flag = True
 
-    print("MQTT client created")
+    # Wait for Schwab setup to finish
+    await schwab_task
 
-    # print(f'835-140 system_loop(), attempting mqtt connection')
+    # Wait for MQTT setup thread to terminate
+    setup_mqtt_thread.join()
 
-    # Connect to the MQTT broker
-    try:
-        # mqtt_connect_tx_return = mqtt_client_tx.connect(mqtt_broker_address, mqtt_broker_port)
-        mqtt_client_tx.connect(mqtt_broker_address, mqtt_broker_port)
+    # Wait for polling setup thread to terminate
+    setup_polling_thread.join()
 
-    except Exception as e:
-        print(f"mqtt_client_tx.connect(): An error occurred: {e}")
-        return
-    
-    # print(f'835-150 system_loop(), mqtt connected')
+    print("Program terminated.")
 
-    print("MQTT client connected")
+if __name__ == "__main__":
+    asyncio.run(main())
 
-    # print(f'returned from client_tx.connection, connect_return: {mqtt_connect_tx_return}')
 
-    # print(f'835-160 system_loop(), creating threads')
 
-    # Start the streamer_thread
-    streamer_thread_obj = Thread(target=streamer_thread, args=(client,), name="streamer_thread", daemon=True)
-    streamer_thread_obj.start()
 
-    # Start the message_processor thread
-    message_processor_thread = Thread(target=message_processor, name="message_processor", daemon=True)
-    message_processor_thread.start()
 
-    # Start the supervisor thread
-    supervisor_thread = Thread(target=supervisor, name="supervisor", daemon=True)
-    supervisor_thread.start()
 
 
-    # print(f'835-170 system_loop(), created threads')
 
 
-    init_check_spx_last(client)
 
 
-
-    # print(f'835-180 system_loop(), entering main while loop')
-
-    # run while the market is open and while we have no system errors or quite signal
-    while True:
-
-        sys_loop_count += 1
-
-
-        abort_flag, abort_reason = any_abort_condition()
-
-        # if we have a reason to abort
-        if abort_flag == True:
-            temp_str = f'In system_loop, abort detected becasue {abort_reason }'
-            print(temp_str)
-            logging.info(temp_str)
-
-            print(f'waiting for streamer_thread_obj to finish')
-            streamer_thread_obj.join()
-            print(f'streamer_thread_obj has finished')
-
-            print(f'waiting for message_processor_thread to finish')
-            message_processor_thread.join()
-            print(f'message_processor_thread has finished')
-
-            print(f'waiting for supervisor_thread to finish')
-            supervisor_thread.join()
-            print(f'supervisor_thread has finished')
-
-            # graceful exit for mqtt client
-            current_time = datetime.now()
-            time_str = current_time.strftime('%H:%M:%S')
-            temp_str = f'Disconnecting MQTT client and executing loop_stop at {time_str}'
-            print(temp_str)
-            logging.info(temp_str)
-            mqtt_client_tx.disconnect()  # Disconnect from broker
-            mqtt_client_tx.loop_stop()  # Stop network loop
-
-            return
-        
-        # if we have a system error or quit flag
-
-            
-        #main loop wait
-        time.sleep(1.0)
-
-
-        current_time_1 = datetime.now()
-        time_str_1 = current_time_1.strftime('%H:%M:%S')
-        
-        check_for_subscribe_update(client)
-
-        # time.sleep(0.001)
-
-        current_time_2 = datetime.now()
-        time_str_2 = current_time_2.strftime('%H:%M:%S')
-
-        # Calculate the elapsed time between first and second capture
-        elapsed_time_1_2 = current_time_2 - current_time_1
-        elapsed_seconds_1_2 = elapsed_time_1_2.total_seconds()
-        # print(f'elapsed_seconds_1_2: {elapsed_seconds_1_2}')
-
-        if elapsed_seconds_1_2 > 1.0:
-            print(f'excessive elapsed_seconds_1_2: {elapsed_seconds_1_2}, loop count:{sys_loop_count} at {time_str_2}')
-
-        update_quote(client)
-
-        current_time_3 = datetime.now()
-        time_str_3 = current_time_3.strftime('%H:%M:%S')
-
-        
-        # Calculate the elapsed time between second and third capture
-        elapsed_time_2_3 = current_time_3 - current_time_2
-        elapsed_seconds_2_3 = elapsed_time_2_3.total_seconds()
-        # print(f'elapsed_seconds_2_3: {elapsed_seconds_2_3}')
-
-        if elapsed_seconds_2_3 > 3.0:
-            print(f'excessive elapsed_seconds_2_3: {elapsed_seconds_2_3}, loop count:{sys_loop_count} at {time_str_3}')
-
-
-
-
-        # # force quit/error
-        # force_quit_count += 1
-        # if force_quit_count >= 13:
-
-        #     # temp_str = f'forcing gbl_quit_flag True'
-        #     # logging.info(temp_str)
-        #     # print(temp_str)
-        #     # gbl_quit_flag = True
-
-        #     temp_str = f'130SEF forcing gbl_system_error_flag True'
-        #     logging.info(temp_str)
-        #     print(temp_str)
-        #     gbl_system_error_flag = True
-
-        # else:
-        #     print(f'force_count:{force_quit_count}')
-
-
-    # run while the market is open and while we have no system errors or quite signal
-
-
-
-
-main_loop_count = 0
-def main():
-    global gbl_quit_flag
-    global gbl_system_error_flag
-    global main_loop_count
-
-    global gbl_resubscribe_needed
-    global gbl_system_error_flag
-    global gbl_market_open_flag
-    global gbl_queried_pub_error_flag
-    global gbl_streamed_pub_error_flag
-    global time_since_last_stream_pub
-    global time_since_last_queried_pub
-    global gbl_schwab_client
-
-
-
-
-
-
-
-
-
-
-    global_quit_flag = False
-
-    # logging.basicConfig(level=logging.INFO)
-    logging.basicConfig(filename='streamer.log', level=logging.INFO, 
-        format='%(asctime)s - %(levelname)s - %(message)s')
-
-    main_loop_count = 0
-
-    while True:
-
-        main_loop_count += 1
-
-        gbl_system_error_flag = False
-        gbl_resubscribe_needed = False
-        gbl_system_error_flag = False
-        gbl_market_open_flag = False
-        gbl_queried_pub_error_flag = False
-        gbl_streamed_pub_error_flag = False
-        time_since_last_stream_pub = 0
-        time_since_last_queried_pub = 0
-        gbl_schwab_client = None
-
-
-
-
-
-
-
-
-
-
-        # system_loop 
-        # - waits for the market to open
-        # - creates clients and connections with schwab developer and with mqtt
-        # - creates the various threads of the streamer
-        # - monitors gbl_gbl_system_error_flag and if ever set, shuts everthing down gracefully and returns
-        
-        system_loop()
-
-        if gbl_quit_flag == True:
-            break
-
-        # the only rease we should get here is if gbl_gbl_system_error_flag had been set
-        # we will now loop around and call system_loop() again
-
-
-    temp_str = "exiting schwab-stream"
-    print(f'\n{temp_str}\n')
-    logging.info(temp_str)
-    time.sleep(0.525)
-
-    # Use sys.exit to terminate cleanly
-    sys.exit(0)
-
-
-if __name__ == '__main__':
-    main()
 
 
