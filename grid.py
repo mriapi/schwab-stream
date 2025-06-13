@@ -18,7 +18,7 @@ quote_df_lock = threading.Lock()
 global quote_df
 
 global mqtt_client
-global schwab_client
+# global schwab_client
 
 global gbl_total_message_count
 gbl_total_message_count = 0
@@ -884,6 +884,10 @@ def wait_for_market_to_open():
         throttle_wait_display += 1
         # print(f'throttle_wait_display: {throttle_wait_display}')
         if throttle_wait_display % 6 == 1:
+
+            initialize_quote_df()
+
+
             current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
             current_eastern_day = current_eastern_time.strftime('%A')
 
@@ -901,11 +905,23 @@ def wait_for_market_to_open():
         time.sleep(10)
 
 
+def initialize_quote_df():
+    global quote_df, quote_df_lock
+
+    with quote_df_lock: 
+
+        # Create/empty/initialize quotes_df
+        quote_df = pd.DataFrame(columns=['symbol', 'bid', 'bid_time', 'ask', 'ask_time', 'last', 'last_time'])
+
+
+
 def grid_loop():
     global mqtt_client
     global market_open_flag
     global quote_df
-    global schwab_client
+    # global schwab_client
+
+    initialize_quote_df()
     
     
     while True:
@@ -1009,10 +1025,9 @@ def main():
     global time_since_last_quereied 
     global time_since_last_stream
 
-    with quote_df_lock:
-        # Create the quote_df dataframe and initialize the columns
-        quote_df = pd.DataFrame(columns=['symbol', 'bid', 'bid_time', 'ask', 'ask_time', 'last', 'last_time'])
-        pass
+
+    initialize_quote_df()
+
 
     while True:
 

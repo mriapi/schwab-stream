@@ -33,15 +33,37 @@ import signal
 # #               12:15
 # entry_times = ["11:14"]
 
-# #                9:28     9:43    10:28    10:58    11:13    11:28
-# entry_times = ["12:28", "12:43", "13:28", "13:58", "14:13", "14:28"]
+# #               10:14    10:28    10:58    11:28
+# entry_times = ["13:13", "13:31", "13:58", "14:28"]
 
-#               10:14    10:28    10:58    11:28
-entry_times = ["13:13", "13:31", "13:58", "14:28"]
+# #                8:43     9:43     9:58    10:28    10:58    11:28
+# entry_times = ["11:43", "12:43", "12:58", "13:28", "13:58", "14:28"]
+
+#                9:43     9:58    10:28    10:58    11:13    11:28
+entry_times = ["12:43", "12:58", "13:28", "13:58", "14:13", "14:28"]
+
+
+
+
 
 
 
 real_trading_flag = True
+
+
+# def show_times_raw():
+#     global entry_times
+#     # Convert each datetime.time object to a string formatted as HH:MM
+#     formatted_times = [time.strftime("%H:%M") if isinstance(time, datetime.time) else str(time) for time in entry_times]
+    
+#     display_str = ", ".join(formatted_times)
+#     print(f"entry times: {display_str}")
+
+def show_times_raw(times):
+    
+    times_as_str = [time.strftime("%H:%M") for time in times]
+    times_list = ",    ".join(times_as_str)
+    print(f'Entry times (Eastern): {times_list}')
 
 
 
@@ -58,6 +80,27 @@ def show_times(entry_times):
     pacific_times = [(datetime.strptime(t, "%H:%M") - timedelta(hours=3)).strftime("%I:%M %p") for t in times_as_str]
     print(", ".join(pacific_times))
     print()
+
+
+def show_pacicif_times(entry_times):
+        
+        return
+
+        # print("\nEastern times")
+        times_as_str = [time.strftime("%H:%M") for time in entry_times]
+        display_str = ",    ".join(times_as_str)
+        # print(display_str)
+
+        times_as_12_hour = [datetime.strptime(t, "%H:%M").strftime("%I:%M %p") for t in times_as_str]
+        display_str = ",    ".join(times_as_12_hour )
+        # print(display_str)
+
+        print("\nPacific Times")
+        pacific_times = [(datetime.strptime(t, "%H:%M") - timedelta(hours=3)).strftime("%I:%M %p") for t in times_as_str]
+        print(", ".join(pacific_times))
+        print()
+
+
 
 
 
@@ -541,6 +584,7 @@ def display_syms_only(option_list):
         return
 
 
+IS_OPEN_OPEN_OFFSET = 4
 
 
 # Thread function to process messages from the queue
@@ -555,7 +599,7 @@ def process_message():
     while not market_open_flag:
         if end_flag:
             return
-        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=4, close_offset=0)
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
         time.sleep(2)
 
     while True:
@@ -612,6 +656,7 @@ def process_message():
             display_str = f'meic: checking for entry at {current_time} Pacific Time.  Elapsed grid request/response time: {elapsed_milliseconds} mS'
             print(display_str)
             persist_string(display_str)
+            # show_pacific_times(entry_times)
 
             print()
 
@@ -633,7 +678,7 @@ def process_message():
 
 
 
-            # print(f'grid responose topic:<{topic}>, payload_dict type{type(payload_dict)}, data:\n{payload_dict}')
+            # print(f'grid responose payload_dict type{type(payload_dict)}, data:\n{payload_dict}')
             
             (call_short,
                 call_long,
@@ -805,6 +850,8 @@ def process_message():
                 placed_order_flag = False
 
                 entry_time_count = 0
+
+                show_times_raw(entry_times)
 
                 for entry_time in entry_times:
 
@@ -1077,7 +1124,7 @@ def meic_entry():
         while not market_open_flag:
             if end_flag:
                 return
-            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=4, close_offset=0)
+            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
             time.sleep(5)
             market_open_wait_cnt += 1
             if market_open_wait_cnt % 12 == 11:
@@ -1113,7 +1160,7 @@ def meic_entry():
             inner_miec_cnt += 1
 
             if inner_miec_cnt % 10 == 9:
-                market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=4, close_offset=0)
+                market_open_flag, current_eastern_time, temp_secs_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
                 if not market_open_flag:
                     break # break out of inner meic loop and back into the outer meic loop
             
@@ -1127,7 +1174,9 @@ def meic_entry():
             # if display_quote_throttle % 20 == 15:
 
             seconds_to_next_minute -= 1
+            # print(f'meic: seconds_to_next_minute:{seconds_to_next_minute})')
             seconds_to_minute_int -= 1
+            # print(f'meic: seconds_to_minute_int:{seconds_to_minute_int})')
 
             # print(f'seconds_to_minute_int:{seconds_to_minute_int}')
 
@@ -1154,7 +1203,9 @@ def meic_entry():
 
 
 
-            if seconds_to_next_minute <= 0:
+            # if seconds_to_next_minute <= 0:
+            if seconds_to_minute_int <= 0:
+                
 
                 get_positions_success_flag = False
                 get_positions_cnt = 0
@@ -1207,7 +1258,7 @@ def meic_entry():
             
                 print(f'\n=============================\nRequesting SPX grid data at {now_time_str }')
                 publish_grid_request()
-                pass
+
 
 
 def is_market_open():
@@ -1265,7 +1316,7 @@ def wait_for_market_to_open():
     print(f'meic: checking for market open 2')
 
     while True:
-        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=4, close_offset=0)
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
         if market_open_flag:
             break
 
@@ -1306,7 +1357,7 @@ def mqtt_services():
     # while not market_open_flag:
     #     if end_flag:
     #         return
-    #     market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=4, close_offset=0)
+    #     market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
     #     time.sleep(2)
 
 
@@ -1327,7 +1378,7 @@ def mqtt_services():
         mqtt_client.loop(timeout=1.0)  # process network traffic, with a 1-second timeout
         # time.sleep(1) 
 
-        # market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=4, close_offset=0)
+        # market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
         # if market_open_flag == False:
         #     end_flag = True
         #     current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')

@@ -522,7 +522,7 @@ def generate_order_STO_IC_with_triggers(
     call_original_price = call_price
 
     put_price = (put_short_bid - put_long_ask)
-    put_original_price = call_price
+    put_original_price = put_price
 
 
     ic_price = call_price + put_price

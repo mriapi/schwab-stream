@@ -1071,10 +1071,13 @@ def streamer_task():
             get_tokens()
 
         except Exception as e:
+            my_time = datetime.now()
+            # my_time_str = time.strftime('%H:%M:%S') + f".{time.microsecond // 1000:03d}" 
+            my_time_str = my_time.strftime('%H:%M:%S') 
             if "timed out" in str(e):
-                print(f'get_tokens() returned timed out error, e:{e}')
+                print(f'get_tokens() returned timed out error at {my_time_str}, e:{e}')
             else:
-                print(f'get_tokens() returned an error, e:{e}')
+                print(f'get_tokens() returned an error at {my_time_str}, e:{e}')
 
             time.sleep(5)
             continue

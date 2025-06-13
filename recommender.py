@@ -883,59 +883,297 @@ def calculate_atm_straddle_value(chain):
 
 
 
-# returns four type:<class 'list'> variables
-#[['Short Strike', 'Long Strike', 'Short Bid', 'Long Ask', 'Net Credit', 'SPX Offset', 'Spread Width'], [6030.0, 5980.0, 1.6, 0.1, 1.5, 10.1899999999996, 50.0]]
-    
-
-
-# def find_best_credit_spread(option_list, atm_straddle, spx_last_fl, type):
-#     best_pair = None
-#     closest_diff = float('inf')  # To track the closest net credit difference
-#     lowest_ask = float('inf')  # To track the lowest "ask" value for the long option
-
-#     my_short_target = calc_short_target(atm_straddle)
-
-#     # Iterate through all possible pairs of options
-#     for short_option in option_list:
-#         for long_option in option_list:
-
-
-#             if (long_option['bid'] > (2 * my_short_target)) or (short_option['bid'] > (2 * my_short_target)):
-#                 continue
-
-
-#             strike_diff = abs(short_option['STRIKE'] - long_option['STRIKE'])
-            
-#             # Check the strike difference criteria
-#             if 10 <= strike_diff <= 50:
-#                 net_credit = long_option['bid'] - short_option['ask']
-#                 credit_diff = abs(net_credit - my_short_target)
-
-#                 # Check if this pair is better (closer net credit or lower long ask)
-#                 if credit_diff < closest_diff or (credit_diff == closest_diff and long_option['ask'] < lowest_ask):
-#                     closest_diff = credit_diff
-#                     lowest_ask = long_option['ask']
-#                     best_pair = (long_option, short_option)
-
-#     temp_long_option, temp_short_option = best_pair
-#     print(f'194 type:{type}')
-#     print(f'294 temp_long_option:{temp_long_option}')
-#     print(f'394 temp_short_option:{temp_short_option}')
-
-#     return best_pair
-
-
-
-
-
 # RANGE_PERCENT = 0.1
 # RANGE_PERCENT = 0.15
+# RANGE_PERCENT = 0.17
 RANGE_PERCENT = 0.20
 # RANGE_PERCENT = 0.30
 
 
+
+
+
+
+
+
+# def find_best_credit_spread(credit_target, option_list, short_position_list, long_position_list, atm_straddle, spx_last_fl, opt_type):
+#     global max_long_ask  # Ensure the global variable is accessible within the function
+
+
+#     # print(f'find_best_credit_spread()')
+#     # print(f'option_list type:{type(option_list)}, data:\n{option_list}')
+#     # print(f'short_position_list type:{type(short_position_list)}, data:\n{short_position_list}')
+#     # print(f'long_position_list type:{type(long_position_list)}, data:\n{long_position_list}')
+
+#     best_pair = None
+#     closest_diff = float('inf')  # To track the closest net credit difference
+#     lowest_ask = float('inf')  # To track the lowest "ask" value for the long option
+
+#     # print(f'\nfind best opt_type:{opt_type}')
+
+#     # if not short_position_list:
+#     #     print(f'in find_best, no existing short positions')
+#     # else:
+#     #     print(f'in find_best, short_position_list:\n{short_position_list}')
+
+
+#     # if not long_position_list:
+#     #     print(f'in find_best, no existing long positions')
+#     # else:
+#     #     print(f'in find_best, long_position_list:{long_position_list}')
+
+
+    
+
+#     # Iterate through all possible pairs of options
+#     for short_option in option_list:
+#         short_opt_sym = short_option['symbol']
+#         short_opt_bid = short_option['bid']
+
+#         # print(f'considering short {short_opt_sym} at bid {short_opt_bid}')
+
+
+
+#         for long_option in option_list:
+#             long_opt_sym = long_option['symbol']
+#             long_opt_ask = long_option['ask']
+#             # print(f'considering long {long_opt_sym} at ask {long_opt_ask}')
+            
+
+
+#             # Ensure short_option['bid'] and long_option['ask'] are valid for comparison
+#             if (long_option['bid'] > (1.8 * credit_target)) or (short_option['bid'] > (1.8 * credit_target)):
+#                 # print(f'1 rejecting {short_opt_sym}/{long_opt_sym}')
+#                 continue
+
+
+            
+#             # # Check if long_option['ask'] is not higher than max_long_ask
+#             # if long_option['ask'] > max_long_ask:
+#             #     continue
+
+
+#             # print(f'935 short_option type:{type(short_option)} data:{short_option}, long_option type:{type(long_option)},  data:{long_option}')
+
+            
+#             long_opt_sym = long_option['symbol']
+
+#             # don't consider short or long legs that would cancel out existing positions
+
+#             if short_opt_sym in long_position_list:
+#                 # print(f'short_option {short_opt_sym} is in long_positions_list')
+#                 # print(f'2 rejecting {short_opt_sym}/{long_opt_sym}')
+#                 continue
+
+#             if long_opt_sym in short_position_list:
+#                 # print(f'long_option {long_opt_sym} is in short_positions_list')
+#                 # print(f'3 rejecting {short_opt_sym}/{long_opt_sym}')
+#                 continue
+
+
+            
+            
+            
+#             strike_diff = abs(short_option['STRIKE'] - long_option['STRIKE'])
+            
+#             # Check the strike difference criteria
+#             if 15 <= strike_diff <= 50:
+#                 # Calculate net credit
+#                 net_credit = short_option['bid'] - long_option['ask']
+
+#                 if net_credit < (credit_target * 0.5):
+#                     # print(f'4 rejecting {short_opt_sym}/{long_opt_sym}')
+#                     continue
+
+#                 if net_credit > (credit_target * 1.5):
+#                     # print(f'5 rejecting {short_opt_sym}/{long_opt_sym}')
+#                     continue
+
+
+#                 credit_diff = abs(net_credit - credit_target)
+
+#                 # Check if the pair meets the range rule (within a certain percent of the target credit)
+#                 within_range = credit_diff <= (RANGE_PERCENT * credit_target)
+
+#                 # Determine if this is the best pair based on credit_diff and lowest_ask
+#                 # if (credit_diff < closest_diff or 
+#                 #     (within_range and credit_diff == closest_diff and long_option['ask'] < lowest_ask)):
+
+#                 # Select the pair with the lowest 'ask' price, provided it's within range
+#                 if within_range and (long_option['ask'] < lowest_ask or lowest_ask is None):
+
+
+
+
+
+#                     closest_diff = credit_diff
+#                     lowest_ask = long_option['ask']
+
+
+
+
+
+#                     # # display replaced best candidates
+#                     # if best_pair != None:
+#                     #     t_strike_diff = abs(best_pair[0]['STRIKE'] - best_pair[1]['STRIKE'])
+#                     #     t_short_strike = best_pair[0]['STRIKE']
+#                     #     t_long_strike = best_pair[1]['STRIKE']
+#                     #     t_short_bid = best_pair[0]['bid']
+#                     #     t_long_ask = best_pair[1]['ask']
+#                     #     t_nc = best_pair[0]['bid'] - best_pair[1]['ask']
+#                     #     print(f'\nreplacing previous best {opt_type} {t_short_strike}/{t_long_strike} {t_short_bid:.2f}/{t_long_ask:.2f} nc:{t_nc:.2f}')
+
+
+#                     # print(f'\n10 replacing existing best pair:')
+#                     if best_pair == None:
+#                         # print(f'035 None')
+#                         pass
+#                     else:
+#                         # display_short_option, display_long_option = best_pair
+#                         # print(f"036 old Short Option type:{type(display_short_option)}, value:{display_short_option}")
+#                         # print(f"037 old Long Option type:{type(display_long_option)}, value:{display_long_option}")
+#                         pass
+
+#                     best_pair = (short_option, long_option)  # Assign the two legs to the current best_pain
+                    
+#                     # print(f'\n11 with new best pair:{best_pair}')
+#                     display_short_option, display_long_option = best_pair
+#                     # print(f"046 new Short Option type:{type(display_short_option)}, value:{display_short_option}")
+#                     # print(f"047 new Long Option type:{type(display_long_option)}, value:{display_long_option}")
+
+
+#                 else:
+#                     # print(f'057 {short_opt_sym}/{long_opt_sym} qualifies, but not best')
+#                     pass
+
+#     if best_pair is not None:
+#         pass
+#         # Unpack the correctly assigned best pair
+#         temp_short_option, temp_long_option = best_pair
+#         # print(f'194 type:{type}')
+#         # print(f'294 temp_long_option:{temp_long_option}')
+#         # print(f'394 temp_short_option:{temp_short_option}')
+#     else:
+#         pass
+#         # print("No suitable pair found.")
+
+#     return best_pair
+
+
+RANGE_PERCENT = 0.15
+
+
+
 def find_best_credit_spread(credit_target, option_list, short_position_list, long_position_list, atm_straddle, spx_last_fl, opt_type):
+    
+
+    # print(f'fbcs opt_type type:{type(opt_type)}, value:{opt_type}')
+    # print(f'fbcs credit_target type:{type(credit_target)}, value:{credit_target}')
+    # print(f'fbcs option_listt type:{type(option_list)}, value:{option_list}')
+
+
+    num_passes = 1
+    
+    best_short_list = []
+    best_long_list = []
+    best_pair = find_best_credit_spread_range(credit_target, RANGE_PERCENT, option_list, short_position_list, long_position_list, atm_straddle, spx_last_fl, opt_type)
+    # print(f'fbcs opt_type:{opt_type}, result type:{type(best_pair)}, data:{best_pair}')
+
+
+    if best_pair:
+        best_short = best_pair[0]
+        best_short_list = [best_short]
+        best_long = best_pair[1]
+        best_long_list = [best_long]
+
+    if len(best_short_list) == 0 or len(best_long_list) == 0:
+        num_passes += 1
+
+        best_short_list = []
+        best_long_list = []
+        best_pair = find_best_credit_spread_range(credit_target, RANGE_PERCENT+0.10, option_list, short_position_list, long_position_list, atm_straddle, spx_last_fl, opt_type)
+
+        best_short_list = []
+        best_long_list = []
+        if best_pair:
+            best_short = best_pair[0]
+            best_short_list = [best_short]
+            best_long = best_pair[1]
+            best_long_list = [best_long]
+
+    if len(best_short_list) == 0 or len(best_long_list) == 0:
+        num_passes += 1
+
+        best_short_list = []
+        best_long_list = []
+        best_pair = find_best_credit_spread_range(credit_target, RANGE_PERCENT+0.20, option_list, short_position_list, long_position_list, atm_straddle, spx_last_fl, opt_type)
+
+        best_short_list = []
+        best_long_list = []
+        if best_pair:
+            best_short = best_pair[0]
+            best_short_list = [best_short]
+            best_long = best_pair[1]
+            best_long_list = [best_long]
+
+    if len(best_short_list) == 0 or len(best_long_list) == 0:
+        num_passes += 1
+
+        best_short_list = []
+        best_long_list = []
+        best_pair = find_best_credit_spread_range(credit_target, RANGE_PERCENT+0.30, option_list, short_position_list, long_position_list, atm_straddle, spx_last_fl, opt_type)
+
+        best_short_list = []
+        best_long_list = []
+        if best_pair:
+            best_short = best_pair[0]
+            best_short_list = [best_short]
+            best_long = best_pair[1]
+            best_long_list = [best_long] 
+
+    if len(best_short_list) == 0 or len(best_long_list) == 0:
+        num_passes += 1
+
+        best_short_list = []
+        best_long_list = []
+        best_pair = find_best_credit_spread_range(credit_target, RANGE_PERCENT+0.35, option_list, short_position_list, long_position_list, atm_straddle, spx_last_fl, opt_type)
+
+        best_short_list = []
+        best_long_list = []
+        if best_pair:
+            best_short = best_pair[0]
+            best_short_list = [best_short]
+            best_long = best_pair[1]
+            best_long_list = [best_long] 
+
+    if len(best_short_list) == 0 or len(best_long_list) == 0:
+        num_passes += 1
+
+        best_short_list = []
+        best_long_list = []
+        best_pair = find_best_credit_spread_range(credit_target, RANGE_PERCENT+0.40, option_list, short_position_list, long_position_list, atm_straddle, spx_last_fl, opt_type)
+
+        best_short_list = []
+        best_long_list = []
+        if best_pair:
+            best_short = best_pair[0]
+            best_short_list = [best_short]
+            best_long = best_pair[1]
+            best_long_list = [best_long] 
+
+
+    if num_passes > 1:
+        print(f'recommender fbcs passes:{num_passes}')   
+
+
+
+    return best_pair
+
+
+def find_best_credit_spread_range(credit_target, range, option_list, short_position_list, long_position_list, atm_straddle, spx_last_fl, opt_type):
     global max_long_ask  # Ensure the global variable is accessible within the function
+
+    
 
 
     # print(f'find_best_credit_spread()')
@@ -972,6 +1210,21 @@ def find_best_credit_spread(credit_target, option_list, short_position_list, lon
 
 
 
+
+        if opt_type == "CALL":
+            my_short_to_spx = short_option['STRIKE'] - spx_last_fl
+        else: # "PUT"
+            my_short_to_spx = spx_last_fl - short_option['STRIKE']
+
+        if my_short_to_spx < recommend_config.MIN_SHORT_TO_SPX:
+            # print(f'would have rejected short {short_opt_sym} -- too close to spx:{spx_last_fl}, my_short_to_spx:{my_short_to_spx}')
+            continue
+
+        else:
+            # print(f'2904 {short_opt_sym} is okay, spx_last_fl:{spx_last_fl}, my_short_to_spx:{my_short_to_spx}')
+            pass
+
+
         for long_option in option_list:
             long_opt_sym = long_option['symbol']
             long_opt_ask = long_option['ask']
@@ -983,6 +1236,10 @@ def find_best_credit_spread(credit_target, option_list, short_position_list, lon
             if (long_option['bid'] > (1.8 * credit_target)) or (short_option['bid'] > (1.8 * credit_target)):
                 # print(f'1 rejecting {short_opt_sym}/{long_opt_sym}')
                 continue
+
+            if abs(short_option['STRIKE'] - long_option['STRIKE']) < 15:
+                continue
+
 
 
             
@@ -1009,6 +1266,9 @@ def find_best_credit_spread(credit_target, option_list, short_position_list, lon
                 continue
 
 
+
+
+
             
             
             
@@ -1019,11 +1279,14 @@ def find_best_credit_spread(credit_target, option_list, short_position_list, lon
                 # Calculate net credit
                 net_credit = short_option['bid'] - long_option['ask']
 
+                if net_credit > 3.5 or net_credit  < 1.05:
+                    continue
+
                 if net_credit < (credit_target * 0.5):
                     # print(f'4 rejecting {short_opt_sym}/{long_opt_sym}')
                     continue
 
-                if net_credit > (credit_target * 1.5):
+                if net_credit > (credit_target * 2):
                     # print(f'5 rejecting {short_opt_sym}/{long_opt_sym}')
                     continue
 
@@ -1031,7 +1294,7 @@ def find_best_credit_spread(credit_target, option_list, short_position_list, lon
                 credit_diff = abs(net_credit - credit_target)
 
                 # Check if the pair meets the range rule (within a certain percent of the target credit)
-                within_range = credit_diff <= (RANGE_PERCENT * credit_target)
+                within_range = credit_diff <= (range * credit_target)
 
                 # Determine if this is the best pair based on credit_diff and lowest_ask
                 # if (credit_diff < closest_diff or 
@@ -1096,6 +1359,8 @@ def find_best_credit_spread(credit_target, option_list, short_position_list, lon
         # print("No suitable pair found.")
 
     return best_pair
+
+
 
 
 
@@ -1375,9 +1640,6 @@ def generate_recommendation(short_position_list, long_position_list, grid):
 
 
 
-    # return call_candidates, call_recommendation, put_candidates, put_recommendation
-
-    
 
 
 
