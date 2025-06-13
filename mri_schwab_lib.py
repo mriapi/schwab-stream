@@ -289,6 +289,28 @@ def get_account_details():
     return account_details
 
 
+def get_strike_value_from_sym(sym):
+    strike_val = None
+    # Extract strike price (characters 15 to 18)
+    strike_str = sym[14:18]
+    if len(strike_str) == 4:
+        strike_val = int(float(strike_str))
+
+    return strike_val
+
+def get_opt_type_from_sym(sym):
+    type_str = None
+    if "P0" in sym:
+        type_str = "PUT"
+
+    elif "C0" in sym:
+        type_str = "CALL"
+
+
+    return type_str
+
+
+
 
 def get_positions():
     

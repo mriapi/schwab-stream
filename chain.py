@@ -123,9 +123,6 @@ def on_message(client, userdata, msg):
     message_queue.put((topic, payload))
 
 
-# Create an empty pandas DataFrame for quotes
-quote_df = pd.DataFrame(columns=['symbol', 'bid', 'bid_time', 'ask', 'ask_time', 'last', 'last_time'])
-
 
 # Function to update the quote DataFrame
 def add_to_quote_tbl(topic, payload):
@@ -1244,6 +1241,8 @@ def wait_for_market_to_open():
         throttle_wait_display += 1
         # print(f'throttle_wait_display: {throttle_wait_display}')
         if throttle_wait_display % 3 == 2:
+            initialize_quote_df()
+            
             current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
             current_eastern_day = current_eastern_time.strftime('%A')
 
@@ -1256,6 +1255,8 @@ def wait_for_market_to_open():
             print(f'chain: in wait_for_market_to_open, current Eastern time: {current_eastern_day} {current_eastern_hhmmss}')
             
             days_to_refresh = market_open.refresh_expiration_days()
+
+
             if days_to_refresh < 1.5:
                 print(f'\nDays until refresh token expires: {days_to_refresh:.2f} !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n')
 
@@ -1266,10 +1267,22 @@ def wait_for_market_to_open():
         time.sleep(10)
 
 
+def initialize_quote_df():
+    global quote_df, quote_df_lock
+
+    with quote_df_lock: 
+
+        # Create/empty/initialize quotes_df
+        quote_df = pd.DataFrame(columns=['symbol', 'bid', 'bid_time', 'ask', 'ask_time', 'last', 'last_time'])
+
+
+
 
 def chain_loop():
 
     global end_flag
+
+
 
     
     
@@ -1383,6 +1396,8 @@ def chain_loop():
 
 # Main function to set up MQTT client and start the processing thread
 def main():
+
+    initialize_quote_df()
 
     test_destination = get_chain_desination_dir()
 
