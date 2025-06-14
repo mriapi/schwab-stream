@@ -44,10 +44,6 @@ entry_times = ["12:43", "12:58", "13:28", "13:58", "14:13", "14:28"]
 
 
 
-
-
-
-
 real_trading_flag = True
 
 
@@ -584,7 +580,7 @@ def display_syms_only(option_list):
         return
 
 
-IS_OPEN_OPEN_OFFSET = 4
+IS_OPEN_OPEN_OFFSET = 3
 
 
 # Thread function to process messages from the queue
