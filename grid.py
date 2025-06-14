@@ -14,11 +14,16 @@ import calendar
 import pytz
 import market_open
 
+
+MARKET_OPEN_OFFSET = 2
+MARKET_CLOSE_OFFSET = 0
+
 quote_df_lock = threading.Lock()
 global quote_df
 
 global mqtt_client
-# global schwab_client
+mqtt_client = None
+
 
 global gbl_total_message_count
 gbl_total_message_count = 0
@@ -508,8 +513,7 @@ def process_message():
         if market_open_flag == True:
             break
 
-    MARKET_OPEN_OFFSET = 0
-    MARKET_CLOSE_OFFSET = 0
+
 
 
     # # Get the (topic, message) tuple from the queue
@@ -875,7 +879,7 @@ def wait_for_market_to_open():
 
     while True:
 
-        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=2, close_offset=0)
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
         # market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=-599, close_offset=-844)
 
         if market_open_flag:
@@ -903,6 +907,32 @@ def wait_for_market_to_open():
 
 
         time.sleep(10)
+
+
+def initialize_data():
+    global mqtt_client
+    global gbl_total_message_count
+    global time_since_last_quereied
+    global time_since_last_stream
+    global market_open_flag
+    global spx_last_fl
+    global spx_bid_fl
+    global spx_ask_fl
+    global topic_rx_cnt
+    global throttle_rx_cnt_display
+
+
+    mqtt_client = None
+    gbl_total_message_count = 0
+    time_since_last_quereied = 0
+    time_since_last_stream = 0
+    market_open_flag = False
+    spx_last_fl = None
+    spx_bid_fl = None
+    spx_ask_fl = None
+    topic_rx_cnt = 0
+    throttle_rx_cnt_display = 0
+    
 
 
 def initialize_quote_df():
@@ -977,7 +1007,7 @@ def grid_loop():
             mqtt_client.loop(timeout=10.0)  # process network traffic, with a 1-second timeout
             # time.sleep(10) 
 
-            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=2, close_offset=0)
+            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
             # market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=-599, close_offset=-844)
 
             if market_open_flag == False:
@@ -1001,18 +1031,7 @@ def grid_loop():
 
         print(f'grid: restarting main loop')
 
-        
 
-        
-
-
-
-
-
-
-
-
-        pass
 
 
 
@@ -1026,10 +1045,10 @@ def main():
     global time_since_last_stream
 
 
-    initialize_quote_df()
-
-
     while True:
+
+        initialize_quote_df()
+        initialize_data()
 
 
         wait_for_market_to_open()
@@ -1086,8 +1105,8 @@ def main():
         # while True:
         #     mqtt_client.loop(timeout=10.0)  # process network traffic, with a 1-second timeout
         #     # time.sleep(10) 
-        #     market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset=0)
-        #     # market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset= -228)
+        #     market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
+        #     # market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset= -228)
             
         #     if market_open_flag == False:
         #         break

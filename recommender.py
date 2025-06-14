@@ -1161,6 +1161,21 @@ def find_best_credit_spread(credit_target, option_list, short_position_list, lon
             best_long = best_pair[1]
             best_long_list = [best_long] 
 
+    if len(best_short_list) == 0 or len(best_long_list) == 0:
+        num_passes += 1
+
+        best_short_list = []
+        best_long_list = []
+        best_pair = find_best_credit_spread_range(credit_target, RANGE_PERCENT+0.45, option_list, short_position_list, long_position_list, atm_straddle, spx_last_fl, opt_type)
+
+        best_short_list = []
+        best_long_list = []
+        if best_pair:
+            best_short = best_pair[0]
+            best_short_list = [best_short]
+            best_long = best_pair[1]
+            best_long_list = [best_long] 
+
 
     if num_passes > 1:
         print(f'recommender fbcs passes:{num_passes}')   

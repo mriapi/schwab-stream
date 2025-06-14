@@ -20,6 +20,9 @@ import recommend_config
 import positions
 # import streamer
 
+
+MARKET_OPEN_OFFSET = 3
+
 quote_df_lock = threading.Lock()
 
 end_flag = False
@@ -1234,7 +1237,7 @@ def wait_for_market_to_open():
     print(f'chain: in wait_for_market_to_open')
 
     while True:
-        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=3, close_offset=0)
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
         if market_open_flag:
             break
 
@@ -1294,7 +1297,7 @@ def chain_loop():
         print(f'chain: in chain_loop(), waiting for market to open')
 
         while True:
-            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=3, close_offset=0)
+            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
             # if is_market_open():
             if market_open_flag == True:
                 break
@@ -1361,7 +1364,7 @@ def chain_loop():
         while True:
                 mqtt_client.loop(timeout=1.0)  # process network traffic, with a 1-second timeout
                 # time.sleep(1) 
-                market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=3, close_offset=0)
+                market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
 
 
                 if market_open_flag == False:

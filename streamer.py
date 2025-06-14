@@ -16,6 +16,9 @@ import os
 import market_open
 
 
+MARKET_OPEN_OFFSET = 1
+
+
 global websocket
 websocket = None  # Global WebSocket connection
 
@@ -689,7 +692,7 @@ def polling_services():
         next_call_list_ix = 0
 
 
-        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=4, close_offset=0)
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
 
         if not market_open_flag:
             put_strike_list = []
@@ -707,7 +710,7 @@ def polling_services():
                 current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
                 print(f'streamer: polling services: waiting for market to open, current easten time:{current_eastern_hhmmss}')
             time.sleep(1)
-            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=4, close_offset=0)
+            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
             continue
 
 
@@ -742,7 +745,7 @@ def polling_services():
             # print(f'pollig services polling_loop_cnt:{polling_loop_cnt}')
 
 
-            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=4, close_offset=0)
+            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
 
             if not market_open_flag:
                 # print(f'streamer: polling services bc 430')
@@ -1838,7 +1841,7 @@ async def streamer_after_hours():
             while(1):
 
                 # print(f'after hours processing')
-                market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=4, close_offset=0)
+                market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
                 
                 if market_open_flag == True:
                     print(f'after hours processing, market is now open, returning')
@@ -2091,7 +2094,7 @@ async def streamer_during_hours():
             while(1):
 
                 print(f'dh during hours processing')
-                market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=4, close_offset=0)
+                market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
                 
                 if market_open_flag == False:
                     print(f'during hours processing, market is now closed, returning')
@@ -2135,7 +2138,7 @@ async def streamer_services():
 
 
     while(1):
-        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=4, close_offset=0)
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
 
         if market_open_flag == False:
             await streamer_after_hours()
