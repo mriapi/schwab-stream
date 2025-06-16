@@ -163,7 +163,9 @@ def on_message(client, userdata, msg):
         # print(f'5107 rx_functionId:{rx_functionId}\n')
 
         if prev_access_tokan != rx_accessToken:
-            print(f'5109 new access token.  prev:{prev_access_tokan}, new:{rx_accessToken}')
+            current_time = datetime.now()
+            current_time_str = current_time.strftime('%H:%M:%S')
+            print(f'5109 new access token at {current_time_str} Local.  prev:{prev_access_tokan}, new:{rx_accessToken}')
 
 
 

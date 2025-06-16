@@ -10,6 +10,7 @@ import time
 import sys
 import threading
 import paho.mqtt.client as mqtt
+import market_open
 
 
 
@@ -346,6 +347,11 @@ def extract_tokens_mri(token_data):
 
     # Extract values
     access_token_issue_date = token_data.get("access_token_issued")
+
+    # print(f'\n6670 access_token_issue_date type:{type(access_token_issue_date)}, value:{access_token_issue_date}\n')
+
+
+
     refresh_token_issue_date = token_data.get("refresh_token_issued")
     token_dict = token_data.get("token_dictionary", {})
 
@@ -367,7 +373,15 @@ def extract_tokens_mri(token_data):
         now = datetime.now(timezone.utc)
         transpired_access_minutes = (int)((now - access_dt).total_seconds() / 60)
         access_minutes_left = MINUTES_IN_A_HALF_HOUR - transpired_access_minutes
-        if access_minutes_left <= 10:
+
+
+
+        # print(f'\n\n%%%%%%%%%%%%%%%%%%%')
+        # print(f'7720 access_minutes_left:{access_minutes_left}')
+
+        if access_minutes_left <= 5:
+        # if access_minutes_left <= 20:
+
             need_new_access_token = True
             print(f'3791 access_minutes_left:{access_minutes_left}, new access token needed')
         else:
@@ -404,6 +418,29 @@ def extract_tokens_mri(token_data):
             print(f'etm access_token:{access_token}')
 
 
+            access_dt = datetime.fromisoformat(now_iso)
+            transpired_access_minutes = (int)((now - access_dt).total_seconds() / 60)
+            access_minutes_left = MINUTES_IN_A_HALF_HOUR - transpired_access_minutes
+            # print(f'7722 access_minutes_left:{access_minutes_left}')
+
+
+
+            access_token_issue_date = datetime.now(timezone.utc).isoformat()
+
+            # print(f'7760 new access_token_issue_date type:{type(access_token_issue_date)}, value:{access_token_issue_date}')
+
+
+
+
+
+
+
+
+
+
+
+
+
             # publish the new acces token as soon as we have it
             # if gbl_mqtt_client != None:
 
@@ -434,7 +471,7 @@ def extract_tokens_mri(token_data):
 
 
             # print(f'2 saving token object (with updated access token) to file {mri_tokens_file}')
-            print(f'Persisting token object (with updated access token)')
+            print(f'2804 Persisting token object (with updated access token)')
 
             # Save the JSON object to the file
             with open(mri_tokens_file, "w") as f:
@@ -474,6 +511,7 @@ def extract_tokens_mri(token_data):
             access_dt = datetime.fromisoformat(access_token_issue_date)
             transpired_access_minutes = (int)((now - access_dt).total_seconds() / 60)
             access_minutes_left = MINUTES_IN_A_HALF_HOUR - transpired_access_minutes
+            # print(f'7726 access_minutes_left:{access_minutes_left}')
 
     
         
@@ -491,8 +529,8 @@ def extract_tokens_mri(token_data):
     current_time = datetime.now()
     current_time_str = current_time.strftime('%H:%M:%S')
 
-
-    print(f'\n>>>>>>>>>>>>>>>> manage_tokens.py\nToken data loaded at {current_time_str}')
+    print(f'\n>>>>>>>> manage_tokens.py <<<<<<<<')
+    print(f'Token data loaded at {current_time_str}')
     print(f"Transpired access minutes: {transpired_access_minutes}")
     print(f"access_minutes_left: {access_minutes_left}")
     print(f"Transpired refresh minutes: {transpired_refresh_minutes}")
@@ -646,8 +684,12 @@ def get_tokens():
 
     try:
         token_file_data = read_tokens_mri_file()
+        # print(f'2930 got token_file_data')
         # print(f'token_file_data type:{type(token_file_data)}, data:\n{token_file_data}')
+
+
         extract_tokens_mri(token_file_data)
+        # print(f'2932 extracted token_file_data')
         # print(f'9028 refersh_token:{refresh_token}\naccess_token:{access_token}')
 
 
@@ -663,8 +705,13 @@ def get_tokens():
     try:
 
         account_file_data = read_acct_mri_file()
+        # print(f'2940 got account_file_data')
+
+
+
         # print(f'8920 account_file_data  type:{type(account_file_data )}, data:\n{account_file_data }')
         extract_account_mri(account_file_data)
+        # print(f'2942 extracted account_file_data')
         # print(f'9029 hashVal:{hashVal}\nacctNum:{acctNum}')
 
 
@@ -680,9 +727,9 @@ def get_tokens():
 
     all_initialized_flag = all_tokens_initialized()
     if all_initialized_flag == True:
-        print(f'all tokens were initialized')
+        print(f'all tokens have been initialized')
     else:
-        print(f'NOT all tokens were initialized')
+        print(f'NOT all tokens have been initialized')
 
 
 
@@ -849,7 +896,7 @@ def get_tokens():
         with open(mri_tokens_file, "w") as f:
             json.dump(token_data, f, indent=4)
 
-        # print(f"834-2 Token data saved to {mri_tokens_file}")
+        print(f"834-1 Token data saved to {mri_tokens_file}")
 
 
 
@@ -859,13 +906,13 @@ def get_tokens():
             "account_hash": hashVal
         }
 
-        # print(f'934-1 saving account object to file {mri_acct_file}')
+        # print(f'834-2 saving account object to file {mri_acct_file}')
 
         # Save the JSON object to the file
         with open(mri_acct_file, "w") as f:
             json.dump(acct_data, f, indent=4)
 
-        # print(f"934-2 Account data saved to {mri_acct_file}")
+        print(f"834-3 Account data saved to {mri_acct_file}")
 
 
 
@@ -885,7 +932,10 @@ def get_tokens():
     # else check to see if access token needs to be refreshed
     else:
 
-        if access_minutes_left <= 10:
+
+
+        if access_minutes_left <= 5:
+        # if access_minutes_left <= 20:
 
             try:
                 token_dict = refresh_auth_token()
@@ -1065,9 +1115,13 @@ def mqtt_services():
 
 
 
-def streamer_task():
+def manage_tokens_task():
     while True:
         try:
+            # my_time = datetime.now()
+            # my_time_str = my_time.strftime('%H:%M:%S') 
+            # print(f'\n\n3044 calling get_tokens at {my_time_str}')
+
             get_tokens()
 
         except Exception as e:
@@ -1082,7 +1136,13 @@ def streamer_task():
             time.sleep(5)
             continue
 
-        time.sleep(60)
+
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset=0)
+
+        seconds_to_next_minute += 40
+
+        # time.sleep(60)
+        time.sleep(seconds_to_next_minute)
 
 def main():
     global arg_one
@@ -1106,11 +1166,11 @@ def main():
         print("No command-line argument provided.")
 
     # Create threads
-    streamer_thread = threading.Thread(target=streamer_task, daemon=True)
+    tokens_thread = threading.Thread(target=manage_tokens_task, daemon=True)
     mqtt_thread = threading.Thread(target=mqtt_services, daemon=True)
 
     # Start threads
-    streamer_thread.start()
+    tokens_thread.start()
     mqtt_thread.start()
 
     # Keep main thread alive
