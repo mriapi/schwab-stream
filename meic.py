@@ -33,18 +33,14 @@ import signal
 # #               12:15
 # entry_times = ["11:14"]
 
-# #               10:14    10:28    10:58    11:28
-# entry_times = ["13:13", "13:31", "13:58", "14:28"]
-
-# #                8:43     9:43     9:58    10:28    10:58    11:28
-# entry_times = ["11:43", "12:43", "12:58", "13:28", "13:58", "14:28"]
+# # FOMC 
+# #               11:13    11:28    11:43
+# entry_times = ["14:15", "14:28", "14:43"]
 
 #                9:43     9:58    10:28    10:58    11:13    11:28
 entry_times = ["12:43", "12:58", "13:28", "13:58", "14:13", "14:28"]
 
-
-
-real_trading_flag = True
+live_trading_flag = True
 
 
 # def show_times_raw():
@@ -58,8 +54,14 @@ real_trading_flag = True
 def show_times_raw(times):
     
     times_as_str = [time.strftime("%H:%M") for time in times]
-    times_list = ",    ".join(times_as_str)
-    print(f'Entry times (Eastern): {times_list}')
+    times_list = "/".join(times_as_str)
+
+    if live_trading_flag:
+        info_str = "LIVE"
+    else:
+        info_str = "PAPER"
+
+    print(f'{info_str}, Entry times (Eastern): {times_list}')
 
 
 
@@ -874,7 +876,7 @@ def process_message():
                         if (current_time - entry_time_today).total_seconds() <= 300:
                             placed_order_flag = True
 
-                            if real_trading_flag == True:
+                            if live_trading_flag == True:
                                 live_str = "LIVE LIVE LIVE LIVE"
 
                             else:
@@ -887,7 +889,7 @@ def process_message():
                             except Exception as e:
                                 target_credit_fl = 0.00
 
-                            info_str = f'\n\n     !PLACING {live_str} ORDER! at {current_time_str} (Eastern), spx:{spx_price}\n  atm straddle:{atm_straddle:.2f}, target credit:{target_credit_fl:.2f} real trading?:{real_trading_flag}\n\n'
+                            info_str = f'\n\n     !PLACING {live_str} ORDER! at {current_time_str} (Eastern), spx:{spx_price}\n  atm straddle:{atm_straddle:.2f}, target credit:{target_credit_fl:.2f} real trading?:{live_trading_flag}\n\n'
                             print(info_str)
                             post_tranche_data(info_str)
                             persist_string(info_str)
@@ -903,10 +905,10 @@ def process_message():
 
                             # enter IC by placing separate orders for each spread
                             # call_order_form, call_order_id, call_order_details = \
-                            #     order.enter_spread_with_triggers(real_trading_flag, schwab_client, my_hash, "CALL", call_short, call_long, qty=1)
+                            #     order.enter_spread_with_triggers(live_trading_flag, schwab_client, my_hash, "CALL", call_short, call_long, qty=1)
                             
                             # put_order_form, put_order_id, put_order_details = \
-                            #     order.enter_spread_with_triggers(real_trading_flag, schwab_client, my_hash, "PUT", put_short, put_long, qty=1)
+                            #     order.enter_spread_with_triggers(live_trading_flag, schwab_client, my_hash, "PUT", put_short, put_long, qty=1)
                         
                             # print()
                             # print(f'call_order_form type:{type(call_order_form)}, data:{call_order_form}')
@@ -926,7 +928,7 @@ def process_message():
 
                             # enter IC by placing separate order for the full IX
                             ic_order_form, ic_order_id, ic_order_details = order.enter_ic_with_triggers(
-                                    real_trading_flag, 
+                                    live_trading_flag, 
                                     rx_accessToken, 
                                     rx_acctHash, 
                                     call_short, 
@@ -1125,7 +1127,9 @@ def meic_entry():
             market_open_wait_cnt += 1
             if market_open_wait_cnt % 12 == 11:
                 current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
-                print(f'meic: market not open, current easten time:{current_eastern_hhmmss}')
+
+                print(f'\nmeic: market not open, easten time:{current_eastern_hhmmss}')
+                show_times_raw(entry_times)
 
             
 
@@ -1554,7 +1558,7 @@ def meic_loop():
 #     while True:
 #         end_flag = False
 
-#         if real_trading_flag == True:
+#         if live_trading_flag == True:
 #             info_str = f'++++++++++ LIVE ++++++++++'
 
 #         else:
@@ -1595,7 +1599,7 @@ def main():
     while True:
         end_flag = False
 
-        if real_trading_flag:
+        if live_trading_flag:
             info_str = "++++++++++ LIVE ++++++++++"
         else:
             info_str = "---------- PAPER ----------"

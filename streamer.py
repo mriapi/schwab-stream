@@ -14,6 +14,16 @@ import requests
 import aiohttp
 import os
 import market_open
+import uuid
+
+
+bc_ss = 0
+bc_ps = 0
+bc_mq = 0
+bc_mn = 0
+ts_stream_pub = 0
+ts_quote_pub = 0
+
 
 
 MARKET_OPEN_OFFSET = 1
@@ -45,6 +55,8 @@ rx_customerId = None
 rx_correlId = None
 rx_channel = None
 rx_functionId = None
+
+chain_request_flag = None
 
 
 streamer_socket_url = None
@@ -91,6 +103,7 @@ logging.basicConfig(
 BROKER_ADDRESS = "localhost"
 PORT_NUMBER = 1883
 CREDS_INFO_TOPIC = "mri/creds/info"
+SUBSCRIBE_CHAIN_REQUEST = "schwab/spx/chain/request"
 
 
 async def reset_rx():
@@ -132,6 +145,8 @@ def on_message(client, userdata, msg):
     global rx_channel
     global rx_functionId
 
+    global chain_request_flag
+
     topic = msg.topic
     payload = msg.payload.decode()
 
@@ -167,15 +182,23 @@ def on_message(client, userdata, msg):
             current_time_str = current_time.strftime('%H:%M:%S')
             print(f'5109 new access token at {current_time_str} Local.  prev:{prev_access_tokan}, new:{rx_accessToken}')
 
-
+    
+    if SUBSCRIBE_CHAIN_REQUEST in topic:
+        print(f'streamer: got chain reqest')
+        chain_request_flag = True
 
 
 
 def on_connect(client, userdata, flags, rc):
     """ Callback function triggered when the client connects to the broker """
     print(f"Connected to MQTT Broker with result code {rc}")
+
     client.subscribe(CREDS_INFO_TOPIC)
     print(f"Subscribed to topic: {CREDS_INFO_TOPIC}")
+    client.subscribe(SUBSCRIBE_CHAIN_REQUEST)
+    print(f"Subscribed to topic: {SUBSCRIBE_CHAIN_REQUEST}")
+
+
 
 
 # FIX ME
@@ -242,7 +265,26 @@ def mqtt_services():
     global mqtt_client_tx
     global mqtt_intialized
 
-    client = mqtt.Client()
+    global bc_mq
+
+    bc_mq = 61010
+
+
+
+    # client = mqtt.Client()
+
+    # client = mqtt.Client(client_id="streamer_py_static_id")
+
+
+    mqtt_client_uuid = f"mqtt_client_streamer-{uuid.uuid4()}"
+    print(f'client_id_test type{type(mqtt_client_uuid)}, value:{mqtt_client_uuid}')
+
+
+    client = mqtt.Client(client_id=mqtt_client_uuid)
+
+    bc_mq = 61012
+
+
     # client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     mqtt_client_tx = client
     mqtt_intialized = True
@@ -251,13 +293,21 @@ def mqtt_services():
     client.on_message = on_message
     client.connect(BROKER_ADDRESS, PORT_NUMBER, keepalive=60)
 
+    bc_mq = 61014
+
     client.loop_start()
+
+    bc_mq = 61016
 
     while not quit_flag:
         time.sleep(1)
 
+    bc_mq = 61018
+
     print("MQTT service terminating...")
     client.loop_stop()
+
+    bc_mq = 61020
 
 
 
@@ -265,13 +315,27 @@ def mqtt_services():
 def mqtt_setup():
     """ Creates and starts MQTT thread """
     global quit_flag
+    global bc_mq
+
+    bc_mq = 61000
+
+
     mqtt_thread = threading.Thread(target=mqtt_services, daemon=True)
     mqtt_thread.start()
+
+    bc_mq = 61002
 
     while not quit_flag:
         time.sleep(1)
 
+
+    bc_mq = 61004
+
+    
+    
+
     mqtt_thread.join()
+    bc_mq = 61006
     print("MQTT setup thread exiting.")
 
 
@@ -350,6 +414,9 @@ def publish_quote(topic, payload):
 
     if mqtt_client_tx == None:
         print(f'cannont publish quote, mqtt_client_tx is None')
+        return
+    
+    # print(f'pqp payload type:{type(payload)}, data:{payload}')
 
     # Use the lock to ensure thread safety
     with mqtt_publish_lock:
@@ -357,21 +424,55 @@ def publish_quote(topic, payload):
 
 
 
+def publish_grid_quotes(data):
+
+    # pretty_json = json.dumps(data, indent=2)
+
+    json_str = json.dumps(data)
+    # print(f'in publish_grid_quotes, json_str type:{type(json_str)}, data:\n{json_str}')
+
+    topic = "schwab/chain"
+    publish_quote(topic, json_str)
+
+    pass
+
 
 def publish_raw_queried_quote(data):
     global time_since_last_queried_pub
 
+    global ts_quote_pub
+
+    ts_quote_pub = 0
+
     # pretty_json = json.dumps(data, indent=2)
-    # print(f'in publish_raw_streamed_quote, pretty_json type:{type(pretty_json)}, data:\n{pretty_json}')
+
 
     json_str = json.dumps(data)
     # print(f'in publish_raw_streamed_quote, json_str type:{type(json_str)}, data:\n{json_str}')
+
+ 
 
 
     topic = "schwab/queried"
     publish_quote(topic, json_str)
     time_since_last_queried_pub = 0
     pass
+
+
+def publish_spx_chain(data):
+
+    # print(f'\n\n63801 psc data type:{type(data)}, data:{data}')
+
+    # json_str = json.dumps(data)
+    # print(f'\n\n3802 psc json_str type:{type(json_str)}, data:{json_str}')
+
+
+
+    topic = "schwab/chain"
+    # publish_quote(topic, json_str)
+    # publish_quote(topic, data)
+
+
 
 
 
@@ -440,11 +541,25 @@ def get_opt_quote(sym):
             logging.error(info_str)
 
         else:
-            info_str = f'3101 exception requesting quotes :{e} at {current_time_str}, returning'
+            info_str = f'3101A exception requesting quotes :{e} at {current_time_str}, returning'
             logging.error(info_str)
             print(info_str)
 
+            try:
+                code = response.status_code
+
+                info_str = f'3301B failure quote failure code:{code}'
+                logging.error(info_str)
+                print(info_str)
+
+
+            except Exception as e:
+                info_str = f'3101C failure getting response code afer get exception :{e}'
+                logging.error(info_str)
+                print(info_str)
+
         return success_flag
+    
     
     try:
 
@@ -614,6 +729,9 @@ def get_spx_option_chain():
 
         if not isinstance(spx_chain, dict):
             raise ValueError("3040 SPX chain response is not a dictionary")
+        
+
+        
 
         return spx_chain
 
@@ -629,6 +747,43 @@ def get_spx_option_chain():
     
     except Exception as err:
         raise RuntimeError(f"3080 Unexpected error occurred: {err}") from err
+
+
+
+
+
+def extract_chain_quotes(data):
+    try:
+        # with open(file_path, 'r') as file:
+        #     data = json.load(file)
+
+        extracted = []
+
+        def extract_options(exp_date_map):
+            for exp_date in exp_date_map.values():
+                for strike_group in exp_date.values():
+                    for option in strike_group:
+                        extracted.append({
+                            "symbol": option.get("symbol"),
+                            "bid": option.get("bid"),
+                            "ask": option.get("ask"),
+                            "last": option.get("last")
+                        })
+
+        if "callExpDateMap" in data:
+            extract_options(data["callExpDateMap"])
+
+        if "putExpDateMap" in data:
+            extract_options(data["putExpDateMap"])
+
+        return {"data": extracted}
+
+    except FileNotFoundError:
+        print("Error: File not found.")
+    except json.JSONDecodeError:
+        print("Error: File does not contain valid JSON.")
+    except Exception as e:
+        print(f"Unexpected error: {e}")
 
 
 
@@ -678,12 +833,20 @@ def polling_services():
     """ Periodically polls the schwab API for SPX and option quotes  """
     global quit_flag
     global put_strike_list, call_strike_list
+    global chain_request_flag
+
+    global bc_ps
+    
+    bc_ps = 41000
 
     # print(f'streamer: polling services bc 100')
     print(f'Starting pollins services ....')
 
 
     while not quit_flag: # polling services outer (session) loop
+
+        bc_ps = 41002
+
 
         # print(f'streamer: polling services bc 200')
 
@@ -704,6 +867,8 @@ def polling_services():
         ps_wait_market_open_cnt = 0
        
         while not market_open_flag:
+            bc_ps = 41004
+
             ps_wait_market_open_cnt += 1
           
             # print(f'streamer: polling services wait to open {ps_wait_market_open_cnt}')
@@ -724,14 +889,19 @@ def polling_services():
 
         print(f'streamer polling services: market is now open, current easten time:{current_eastern_hhmmss}')
             
-
+        bc_ps = 41006
         get_today_in_epoch()
+        bc_ps = 41008
 
         print(f'streamer: polling services bc 400')
 
-
+        bc_ps = 41010
         asyncio.run(wait_for_rx_credentials(timeout=60))  # Runs the async function
+        bc_ps = 41012
+
+
         if rx_accessToken == None:
+            bc_ps = 41014
             # print(f'streamer: polling services bc 500')
             print(f'streamer: polling services gave up waiting for rx_credentials to be initialized')
 
@@ -740,6 +910,8 @@ def polling_services():
 
 
         while not quit_flag: # innner polling services session loop
+            bc_ps = 41016
+
             polling_loop_cnt += 1
 
             # print(f'streamer: polling services bc 420')
@@ -750,6 +922,7 @@ def polling_services():
             market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
 
             if not market_open_flag:
+                bc_ps = 41018
                 # print(f'streamer: polling services bc 430')
                 print(f'polling services: market is no longer open, breaking to outer session loop')
                 break
@@ -782,15 +955,24 @@ def polling_services():
 
             #         time.sleep(0.10)
 
-
+            bc_ps = 41020
 
             with strike_list_lock:
+                bc_ps = 41022
                 if len(call_strike_list) > 0:
+
+                    bc_ps = 41024
                     temp_call_strike_list = call_strike_list.copy()
+                    bc_ps = 41026
                 else:
+
                     temp_call_strike_list = []
+                    bc_ps = 41028
 
             if len(temp_call_strike_list) > 0:
+
+                bc_ps = 41030
+
                 # next_call_list_ix = 0  # Local index
                 for i in range(4):
                     next_sym = temp_call_strike_list[next_call_list_ix]
@@ -798,13 +980,17 @@ def polling_services():
 
                     get_quote_success = get_opt_quote(next_sym)
                     if not get_quote_success:
-                        print(f'call get_quote_failed for {next_sym}')
-                        time.sleep(1)
+                        print(f'3908 call get_quote_failed for {next_sym}')
+                        time.sleep(2)
+                        break
 
                     next_call_list_ix += 1
                     if next_call_list_ix >= len(temp_call_strike_list):
                         next_call_list_ix = 0
                     time.sleep(0.10)
+
+
+                bc_ps = 41032
 
 
 
@@ -828,15 +1014,21 @@ def polling_services():
             #         time.sleep(0.10)
 
 
+            bc_ps = 41034
 
             with strike_list_lock:
+                bc_ps = 41036
             
                 if len(put_strike_list) > 0:
+                    bc_ps = 41038
                     temp_put_strike_list = put_strike_list.copy()
+                    bc_ps = 41040
+
                 else:
                     temp_put_strike_list = []
 
                 if len(temp_put_strike_list) > 0:
+                    bc_ps = 41042
                     # next_put_list_ix = 0  # Local index
                     for i in range(4):
                         next_sym = temp_put_strike_list[next_put_list_ix]
@@ -844,14 +1036,17 @@ def polling_services():
 
                         get_quote_success = get_opt_quote(next_sym)
                         if not get_quote_success:
-                            print(f'put get_quote_failed for {next_sym}')
-                            time.sleep(1)
+                            print(f'3909 put get_quote_failed for {next_sym}')
+                            time.sleep(2)
+                            break
 
                         next_put_list_ix += 1
                         if next_put_list_ix >= len(temp_put_strike_list):
                             next_put_list_ix = 0
 
                         time.sleep(0.10)
+
+                bc_ps = 41044
 
 
 
@@ -868,17 +1063,30 @@ def polling_services():
             # print(f'streamer: polling services bc 510')
 
 
-            # if polling_loop_cnt % 20 == 2:
-            if polling_loop_cnt % 60 == 2 or len(put_strike_list) == 0 or len(call_strike_list) == 0:
+            bc_ps = 41046
 
-                # print(f'2630 trying to get ohlc')
+
+            # if polling_loop_cnt % 20 == 2:
+            # if polling_loop_cnt % 60 == 2 or len(put_strike_list) == 0 or len(call_strike_list) == 0:
+            if chain_request_flag or polling_loop_cnt % 20 == 2 or len(put_strike_list) == 0 or len(call_strike_list) == 0:
+                bc_ps = 41048
+
+
+                if chain_request_flag:
+                    print(f'CRF was True, will get opt chain')
+
+                chain_request_flag = False
+
+                print(f'2630 trying to get ohlc')
                 # print(f'streamer: polling services bc 520')
 
                 try:
 
                     # print(f'streamer: polling services bc 598 calling get spx current today')
 
+                    bc_ps = 41050
                     returned_ohlc = get_spx_current_today_ohlc()
+                    bc_ps = 41052
 
                     # print(f'streamer: polling returned_ohlc type:{type(returned_ohlc)}, value:{returned_ohlc}')
                     # print(f'streamer: polling spx_high:{spx_high}, spx_low:{spx_low}')
@@ -894,11 +1102,29 @@ def polling_services():
 
                         # print(f'2632 trying to get spx chain')
 
+                        bc_ps = 41054
                         spx_chain = get_spx_option_chain()
+                        bc_ps = 41056
+
                         if spx_chain is not None:
                             # print(f'2634 trying to get call/put list from chain data')
                             # print(f'streamer: polling services bc 600 calling parse spx chain')
+
+                            # publish spx_chain via mqtt
+                            print(f'spx_chain type:{type(spx_chain)}.  Should be json')
+
+                            bc_ps = 41058
                             parse_spx_chain(spx_chain)
+                            bc_ps = 41060
+
+
+
+                            chain_quotes = extract_chain_quotes(spx_chain)
+                            # print(f'\n\n\n10520 chain_quotes type:{type(chain_quotes)}\ndata:{chain_quotes}\n\n\n')
+                            publish_grid_quotes(chain_quotes)
+
+                            
+                            # publish_spx_chain(spx_chain)
 
                         else:
                             info_str = f'2534 could not get chain data'
@@ -907,6 +1133,7 @@ def polling_services():
 
 
                     except Exception as e:
+                        bc_ps = 41062
                         info_str = f'2677 get spx chain error:{e}'
                         print(info_str)
                         logging.error(info_str)
@@ -916,15 +1143,24 @@ def polling_services():
                         print(f'0832 poller spx_high:{spx_high}, spx_low:{spx_low}')
 
                 except Exception as e:
+                    bc_ps = 41064
                     info_str = f'2674 get ohlc error:{e}, could not get SPX o/h/l/c'
                     print(info_str)
                     logging.error(info_str)
 
             if polling_loop_cnt % 120 == 75:
+
+                bc_ps = 41066
                 get_today_in_epoch()
+                bc_ps = 41068
+
             time.sleep(1)
 
+        bc_ps = 41070
+
         # innner polling services session loop
+
+    bc_ps = 41072
 
 
     # polling services outer (session) loop
@@ -951,6 +1187,41 @@ def quote_polling_setup():
 
 
 
+# --------------------------- supervisor -------------------------
+
+
+
+
+def stream_supervisor():
+    """ Creates and starts schwab quote thread """
+    global quit_flag
+    global ts_stream_pub, ts_quote_pub
+
+    ss_cnt = 0
+
+
+    while not quit_flag:
+        time.sleep(1)
+        ss_cnt += 1
+
+        ts_stream_pub += 1
+        ts_quote_pub += 1
+
+
+
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
+
+
+        if market_open_flag:
+
+            if ts_stream_pub > 3 or ts_quote_pub > 3 or (ss_cnt % 60 == 7):
+                
+                print(f'streamer supervisor dh {ss_cnt}, st_pub:{ts_stream_pub}, qu_pub:{ts_quote_pub}, bc_ss:{bc_ss}, bc_ps:{bc_ps}, bc_mq:{bc_mq}, bc_mn:{bc_mn}')
+
+        else:
+            if ss_cnt % 60 == 8:
+                print(f'streamer supervisor ah {ss_cnt}, st_pub:{ts_stream_pub}, qu_pub:{ts_quote_pub}, bc_ss:{bc_ss}, bc_ps:{bc_ps}, bc_mq:{bc_mq}, bc_mn:{bc_mn}')
+
 
 
 
@@ -960,9 +1231,16 @@ def quote_polling_setup():
 async def schwab_setup():
     """ Creates, starts, and joins the streamer_services coroutine """
     global quit_flag
+    global bc_ss
+
+    bc_ss = 81000
+
+
     print("Schwab setup starting streamer services...")
 
     await streamer_services()  # Run streamer until quit_flag is True
+
+    bc_ss = 81002
 
     print("Schwab setup terminating...")    
 
@@ -1286,12 +1564,83 @@ websocket_lock = asyncio.Lock()
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+# async def subscribe_level_one_equities(customer_id, correl_id, symbols, fields):
+#     global websocket
+
+
+#     # print(f'websocket type:{type(websocket)}')
+
+#     success_flag = False
+
+#     subscription_request = {
+#         "requests": [{
+#             "service": "LEVELONE_EQUITIES",
+#             "requestid": 2,
+#             "command": "SUBS",
+#             "SchwabClientCustomerId": customer_id,
+#             "SchwabClientCorrelId": correl_id,
+#             "parameters": {
+#                 "keys": symbols,
+#                 "fields": fields
+#             }
+#         }]
+#     }
+
+#     # print(f'sloe 2')
+
+#     try:
+
+#         await websocket.send(json.dumps(subscription_request))
+
+#     except Exception as e:
+#         print(f'sloe error 1: {e}')
+
+#     # print(f'sloe 4')
+
+#     async with websocket_lock:  # Lock WebSocket interactions
+#         try:
+#             response = await asyncio.wait_for(websocket.recv(), timeout=5)  # Timeout after 5 seconds
+#         except asyncio.TimeoutError:
+#             logging.error("1380 LOE Timeout while waiting for WebSocket response.")
+#             print("1390 LOE Timeout while waiting for WebSocket response.")
+#             return
+
+
+#     if not await aio_is_valid_response(response):
+#         info_str = f'1400 subscribe_level_one_equities() failed valid check'
+#         print(info_str)
+#         # logging.error(info_str)
+
+#     else:
+#         info_str = f'1410 subscribe_level_one_equities() succeeded'
+#         print(info_str)
+#         # logging.info(info_str)
+#         success_flag = True
+
+#     return success_flag
+
+
+
+
+
+
+
+
 async def subscribe_level_one_equities(customer_id, correl_id, symbols, fields):
     global websocket
-
-
-    # print(f'websocket type:{type(websocket)}')
-
     success_flag = False
 
     subscription_request = {
@@ -1308,33 +1657,27 @@ async def subscribe_level_one_equities(customer_id, correl_id, symbols, fields):
         }]
     }
 
-    # print(f'sloe 2')
-
-    try:
-
-        await websocket.send(json.dumps(subscription_request))
-
-    except Exception as e:
-        print(f'sloe error 1: {e}')
-
-    # print(f'sloe 4')
-
-    async with websocket_lock:  # Lock WebSocket interactions
+    async with websocket_lock:
         try:
-            response = await asyncio.wait_for(websocket.recv(), timeout=5)  # Timeout after 5 seconds
+            await websocket.send(json.dumps(subscription_request))
+        except Exception as e:
+            logging.error(f'1385 Error sending equities subscription: {e}')
+            print(f'1385 Error sending equities subscription: {e}')
+            return success_flag
+
+        try:
+            response = await asyncio.wait_for(websocket.recv(), timeout=5)
         except asyncio.TimeoutError:
             logging.error("1380 LOE Timeout while waiting for WebSocket response.")
             print("1390 LOE Timeout while waiting for WebSocket response.")
-            return
-
+            return success_flag
 
     if not await aio_is_valid_response(response):
-        info_str = f'1400 subscribe_level_one_equities() failed valid check'
+        info_str = "1400 subscribe_level_one_equities() failed valid check"
         print(info_str)
-        # logging.error(info_str)
-
+        logging.error(info_str)
     else:
-        info_str = f'1410 subscribe_level_one_equities() succeeded'
+        info_str = "1410 subscribe_level_one_equities() succeeded"
         print(info_str)
         # logging.info(info_str)
         success_flag = True
@@ -1345,55 +1688,120 @@ async def subscribe_level_one_equities(customer_id, correl_id, symbols, fields):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# async def subscribe_level_one_options(customer_id, correl_id, symbol_list, fields):
+#     global websocket
+#     global strike_list_lock
+
+
+#     with strike_list_lock:
+#         opt_list_str = ", ".join(symbol_list)
+
+
+#     subscription_request = {
+#         "requests": [
+#             {
+#                 "service": "LEVELONE_OPTIONS",
+#                 "requestid": 7,
+#                 "command": "ADD",
+#                 "SchwabClientCustomerId": customer_id,
+#                 "SchwabClientCorrelId": correl_id,
+#                 "parameters": {
+#                     # "keys": symbol_list,
+#                     # "keys": temp_sym_list,
+#                     "keys": opt_list_str,
+
+#                     "fields": fields
+#                 }
+#             }
+#         ]
+#     }
+
+#     await websocket.send(json.dumps(subscription_request))
+
+#     async with websocket_lock:  # Lock WebSocket interactions
+#         try:
+#             response = await asyncio.wait_for(websocket.recv(), timeout=5)  # Timeout after 5 seconds
+#         except asyncio.TimeoutError:
+#             logging.error("1350 LOO Timeout while waiting for WebSocket response.")
+#             print("LOO Timeout while waiting for WebSocket response.")
+#             return
+
+
+#     if not await aio_is_valid_response(response):
+#         info_str = '1360 subscribe_level_one_optionss() failed valid check'
+#         print(info_str)
+#         logging.error(info_str)
+#     else:
+
+#         # info_str = '1370 subscribe_level_one_optionss() was valid'
+#         # print(info_str)
+#         # logging.info(info_str)
+#         pass
+
+
+
+
 async def subscribe_level_one_options(customer_id, correl_id, symbol_list, fields):
     global websocket
     global strike_list_lock
 
-
     with strike_list_lock:
         opt_list_str = ", ".join(symbol_list)
 
-
     subscription_request = {
-        "requests": [
-            {
-                "service": "LEVELONE_OPTIONS",
-                "requestid": 7,
-                "command": "ADD",
-                "SchwabClientCustomerId": customer_id,
-                "SchwabClientCorrelId": correl_id,
-                "parameters": {
-                    # "keys": symbol_list,
-                    # "keys": temp_sym_list,
-                    "keys": opt_list_str,
-
-                    "fields": fields
-                }
+        "requests": [{
+            "service": "LEVELONE_OPTIONS",
+            "requestid": 7,
+            "command": "ADD",
+            "SchwabClientCustomerId": customer_id,
+            "SchwabClientCorrelId": correl_id,
+            "parameters": {
+                "keys": opt_list_str,
+                "fields": fields
             }
-        ]
+        }]
     }
 
-    await websocket.send(json.dumps(subscription_request))
-
-    async with websocket_lock:  # Lock WebSocket interactions
+    async with websocket_lock:
         try:
-            response = await asyncio.wait_for(websocket.recv(), timeout=5)  # Timeout after 5 seconds
-        except asyncio.TimeoutError:
-            logging.error("1350 LOO Timeout while waiting for WebSocket response.")
-            print("LOO Timeout while waiting for WebSocket response.")
+            await websocket.send(json.dumps(subscription_request))
+        except Exception as e:
+            logging.error(f'1425 Error sending options subscription: {e}')
+            print(f'1425 Error sending options subscription: {e}')
             return
 
+        try:
+            response = await asyncio.wait_for(websocket.recv(), timeout=5)
+        except asyncio.TimeoutError:
+            logging.error("1350 LOO Timeout while waiting for WebSocket response.")
+            print("1350 LOO Timeout while waiting for WebSocket response.")
+            return
 
     if not await aio_is_valid_response(response):
-        info_str = '1360 subscribe_level_one_optionss() failed valid check'
+        info_str = '1360 subscribe_level_one_options() failed valid check'
         print(info_str)
         logging.error(info_str)
-    else:
-
-        # info_str = '1370 subscribe_level_one_optionss() was valid'
-        # print(info_str)
-        # logging.info(info_str)
-        pass
+    # else:
+    #     logging.info("1370 subscribe_level_one_options() succeeded")
 
 
 
@@ -1741,6 +2149,8 @@ async def streamer_after_hours():
     global socket_active
     global mqtt_intialized
 
+    global bc_ss
+
     error_flag = False
 
 
@@ -1751,17 +2161,20 @@ async def streamer_after_hours():
     wait_cnt = 0
 
     while(1):
+        bc_ss = 71002
         print(f'outer loop')
 
 
         # wait for the mqtt client to be initialized
         while(1):
-            # print(f'ss waiting for mqtt_intialized')
+            bc_ss = 71004 
             if mqtt_intialized == True:
                 break
 
             # print(f'ss waiting mqtt 20')
+            bc_ss = 71006
             await asyncio.sleep(2)
+            bc_ss = 71008
             # print(f'ss waiting mqtt 22')
                 
 
@@ -1769,9 +2182,16 @@ async def streamer_after_hours():
 
         # print(f'ss 50200 mqtt is initialized')
 
+        bc_ss = 71010
         await reset_rx()
+        bc_ss = 71012
+
         # print(f'ss 50202')
+
+        bc_ss = 71014
         await aio_publish_request_creds()
+        bc_ss = 71016
+
         # print(f'ss 50204')
         error_flag = False
 
@@ -1786,7 +2206,10 @@ async def streamer_after_hours():
             if rx_accessToken != None:
                 # print(f'ss 20302')
                 print(f'rx_accessToken was initialized on wait_cnt {wait_cnt}')
+
+                bc_ss = 71018
                 await asyncio.sleep(1)
+                bc_ss = 71020
                 # print(f'ss 20304')
                 break
 
@@ -1796,7 +2219,10 @@ async def streamer_after_hours():
             await asyncio.sleep(1)  # Non-blocking sleep
             # print(f'ss 20308')
             wait_cnt += 1
+
+            bc_ss = 71022
             await aio_publish_request_creds()
+            bc_ss = 71024
 
             # print(f'ss 20308')
 
@@ -1811,8 +2237,13 @@ async def streamer_after_hours():
         while(1):
             await asyncio.sleep(1)
             wait_cnt += 1
+
+            bc_ss = 71026
             user_preferences_success = await get_user_preferences()
+            bc_ss = 71028
             # print(f'user_preferences_success:{user_preferences_success}, cnt:{wait_cnt}')
+
+            
 
             if not user_preferences_success:
                 print(f'user preferences failed, continuing')
@@ -1821,14 +2252,17 @@ async def streamer_after_hours():
             else:
                 print(f'user preferences succeeded')
 
+            bc_ss = 71030
             login_success = await login_to_schwab_streamer()  # Attempt login
+            bc_ss = 71032
 
             if not login_success:
                 print(f'login_success failed, continuing')
                 continue
 
-
+            bc_ss = 71034
             sub_LOE_success = await subscribe_level_one_equities(sch_client_customer_id, sch_client_correl_id, "$SPX", "0,1,2,3,4,5,8,10")
+            bc_ss = 71036
 
             if not sub_LOE_success:
                 print(f'sub_LOE failed, continuing')
@@ -1843,14 +2277,18 @@ async def streamer_after_hours():
             while(1):
 
                 # print(f'after hours processing')
+                bc_ss = 71038
                 market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
-                
+                bc_ss = 71040
+
                 if market_open_flag == True:
                     print(f'after hours processing, market is now open, returning')
                     return
 
                 # print(f'calling rcv')
+                bc_ss = 71042
                 rcv_msgs_success = await receive_messages(duration=10,caller=10)
+                bc_ss = 71044
 
 
                 if not rcv_msgs_success:
@@ -1884,6 +2322,9 @@ async def aio_publish_raw_streamed_notify(data):
 
 async def aio_publish_raw_streamed_quote(data):
     global time_since_last_stream_pub
+    global ts_stream_pub
+
+    ts_stream_pub = 0
 
     json_str = json.dumps(data)
     # print(f'in aio_publish_raw_streamed_quote, json_str type:{type(json_str)}, data:\n{json_str}')
@@ -1979,6 +2420,10 @@ async def streamer_during_hours():
 
     error_flag = False
 
+    global bc_ss
+
+    bc_ss = 61002
+
 
     info_str = f'Streamer during hours started......'
     # logging.info(info_str)
@@ -1992,6 +2437,7 @@ async def streamer_during_hours():
 
         # wait for the mqtt client to be initialized
         while(1):
+            bc_ss = 61004
             # print(f'ss dh waiting for mqtt_intialized')
             if mqtt_intialized == True:
                 break
@@ -2005,9 +2451,16 @@ async def streamer_during_hours():
 
         # print(f'ss dh 50200 mqtt is initialized')
 
+        bc_ss = 61006
         await reset_rx()
+        bc_ss = 61008
+
+
         # print(f'ss dh 50202')
+        bc_ss = 61010
         await aio_publish_request_creds()
+        bc_ss = 61012
+
         # print(f'ss dh 50204')
         error_flag = False
 
@@ -2020,6 +2473,7 @@ async def streamer_during_hours():
 
 
             if rx_accessToken != None:
+                bc_ss = 61014
                 # print(f'ss dh 20302')
                 print(f'rx_accessToken was initialized on wait_cnt {wait_cnt}')
                 await asyncio.sleep(1)
@@ -2032,7 +2486,10 @@ async def streamer_during_hours():
             await asyncio.sleep(1)  # Non-blocking sleep
             # print(f'ss dh 20308')
             wait_cnt += 1
+
+            bc_ss = 61016
             await aio_publish_request_creds()
+            bc_ss = 61018
 
             # print(f'ss dh 20308')
 
@@ -2047,24 +2504,33 @@ async def streamer_during_hours():
         while(1):
             await asyncio.sleep(1)
             wait_cnt += 1
+
+            bc_ss = 61020
             user_preferences_success = await get_user_preferences()
+            bc_ss = 61022
+
             # print(f'dh user_preferences_success:{user_preferences_success}, cnt:{wait_cnt}')
 
             if not user_preferences_success:
+                
                 print(f'dh user preferences failed, continuing')
                 break
 
             else:
                 print(f'dh user preferences succeeded')
 
+
+            bc_ss = 61024
             login_success = await login_to_schwab_streamer()  # Attempt login
+            bc_ss = 61026
 
             if not login_success:
                 print(f'dh login_success failed, continuing')
                 continue
 
-
+            bc_ss = 61028
             sub_LOE_success = await subscribe_level_one_equities(sch_client_customer_id, sch_client_correl_id, "$SPX", "0,1,2,3,4,5,8,10")
+            bc_ss = 61030
 
             if not sub_LOE_success:
                 print(f'dh sub_LOE failed, continuing')
@@ -2079,6 +2545,8 @@ async def streamer_during_hours():
             # wait for the call/put lists to be initialized
             wait_put_call_cnt = 0
             while wait_put_call_cnt < 200:
+                bc_ss = 61032
+
                 print(f'waiting for strike lists to be initialized, wait_put_call_cnt:{wait_put_call_cnt}')
                 if len(call_strike_list) > 0 and len(put_strike_list) > 0:
                     print(f'strike lists have been initialized, wait_put_call_cnt:{wait_put_call_cnt}')
@@ -2092,6 +2560,7 @@ async def streamer_during_hours():
 
 
             print(f'dh starting loop 3')
+            bc_ss = 61034
 
             while(1):
 
@@ -2099,12 +2568,17 @@ async def streamer_during_hours():
                 market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
                 
                 if market_open_flag == False:
+                    bc_ss = 61036
                     print(f'during hours processing, market is now closed, returning')
                     return
                 
                 # print(f'88301 calling subscribe to options')
 
+                bc_ss = 61038
                 sub_opt_success = await subscribe_to_options()
+                bc_ss = 61040
+
+
                 if not sub_opt_success:
                     info_str = f'3882 subscribe options failed'
                     logging.warning(info_str)
@@ -2114,7 +2588,9 @@ async def streamer_during_hours():
 
 
                 # print(f'dh calling rcv')
+                bc_ss = 61042
                 rcv_msgs_success = await receive_messages(duration=60,caller=12)
+                bc_ss = 61044
 
 
                 if not rcv_msgs_success:
@@ -2122,32 +2598,45 @@ async def streamer_during_hours():
                     error_flag = True
                     break
 
+                bc_ss = 61046
+
 
             if error_flag:
                 break
 
+            bc_ss = 61048
+
         if error_flag:
             continue
 
-
-
-
+        bc_ss = 61048
 
 
 
 
 async def streamer_services():
 
+    global bc_ss
+
+    bc_ss = 81004
+
 
     while(1):
+
+        bc_ss = 81006
         market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
+        bc_ss = 81008
 
         if market_open_flag == False:
+            bc_ss = 81010
             await streamer_after_hours()
+            bc_ss = 81012
             continue
 
         else:
+            bc_ss = 81014
             await streamer_during_hours()
+            bc_ss = 81016
             continue
 
     return
@@ -2309,22 +2798,38 @@ async def streamer_services():
 
 async def main():
     global quit_flag
+    global bc_mn
+
+    bc_mn = 91000
 
 
     info_str = f'streamer startup . . . .'
     print(info_str)
     logging.info(info_str)
 
+    bc_mn = 1002
+
+    strm_sup_thread = threading.Thread(target=stream_supervisor, daemon=True)
+    strm_sup_thread.start()
+
+    bc_mn = 91004
+
     # Start MQTT setup in a separate thread
     setup_mqtt_thread = threading.Thread(target=mqtt_setup, daemon=True)
     setup_mqtt_thread.start()
+
+    bc_mn = 91006
 
     # Start quote polling setup in a separate thread
     setup_polling_thread = threading.Thread(target=quote_polling_setup, daemon=True)
     setup_polling_thread.start()
 
+    bc_mn = 91008
+
     # Start Schwab setup as an async task
     schwab_task = asyncio.create_task(schwab_setup())
+
+    bc_mn = 91010
 
 
     # try:
@@ -2351,8 +2856,12 @@ async def main():
         print(f'\n{info_str}')
         quit_flag = True
 
+    bc_mn = 91012
+
     # Wait for Schwab setup to finish
     await schwab_task
+
+    bc_mn = 91014
 
 
     info_str = f'9990 waiting for threads to join'
@@ -2360,17 +2869,29 @@ async def main():
     print(f'\n{info_str}')
     quit_flag = True
 
+    bc_mn = 91016
+
 
     # Wait for MQTT setup thread to terminate
     setup_mqtt_thread.join()
 
+    bc_mn = 91018
+
     # Wait for polling setup thread to terminate
     setup_polling_thread.join()
+
+    bc_mn = 91020
+
+    strm_sup_thread.join()
+
+    bc_mn = 91022
 
     info_str = f'9992 program is terminating'
     logging.error(info_str)
     print(f'\n{info_str}')
     quit_flag = True
+
+    bc_mn = 91024
 
 if __name__ == "__main__":
     asyncio.run(main())

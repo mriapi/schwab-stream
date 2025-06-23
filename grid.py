@@ -18,6 +18,8 @@ import market_open
 MARKET_OPEN_OFFSET = 2
 MARKET_CLOSE_OFFSET = 0
 
+DEBUG_CHAIN_SYM = "P06000"
+
 quote_df_lock = threading.Lock()
 global quote_df
 
@@ -83,6 +85,7 @@ if mqtt_mode == MQTT_MODE_TOPICS:
     SPX_OPT_BID_ASK_LAST_CHECK = "schwab/option/spx/basic/"
     SPX_SCHWAB_STREAM = ""
     SPX_SCHWAB_QUERIED = ""
+    SPX_SCHWAB_CHAIN = ""
 
 elif mqtt_mode == MQTT_MODE_RAW:
     SPX_LAST_TOPIC = ""
@@ -90,6 +93,7 @@ elif mqtt_mode == MQTT_MODE_RAW:
     SPX_OPT_BID_ASK_LAST_CHECK = ""
     SPX_SCHWAB_STREAM = "schwab/stream"
     SPX_SCHWAB_QUERIED = "schwab/queried"
+    SPX_SCHWAB_CHAIN = "schwab/chain"
 
 else:
     SPX_LAST_TOPIC = ""
@@ -97,10 +101,12 @@ else:
     SPX_OPT_BID_ASK_LAST_CHECK = ""
     SPX_SCHWAB_STREAM = ""
     SPX_SCHWAB_QUERIED = ""   
+    SPX_SCHWAB_CHAIN = ""
 
 
 GRID_REQUEST_TOPIC = "schwab/spx/grid/request/#"
 GRID_RESPONSE_TOPIC = "schwab/spx/grid/response/"
+CHAIN_REQUEST_TOPIC = "schwab/spx/chain/request"
 
 # Callback function when the client connects to the broker
 def on_connect(client, userdata, flags, rc):
@@ -122,6 +128,8 @@ def on_connect(client, userdata, flags, rc):
             print(f"Subscribed to topic: {SPX_SCHWAB_STREAM}")
             client.subscribe(SPX_SCHWAB_QUERIED)
             print(f"Subscribed to topic: {SPX_SCHWAB_QUERIED}")
+            client.subscribe(SPX_SCHWAB_CHAIN)
+            print(f"Subscribed to topic: {SPX_SCHWAB_CHAIN}")
 
         client.subscribe(GRID_REQUEST_TOPIC)
         print(f"Subscribed to topic: {GRID_REQUEST_TOPIC}")
@@ -142,6 +150,7 @@ def on_message(client, userdata, msg):
     topic = msg.topic
     payload = msg.payload.decode()
 
+
     # print(f'Received topic type:{type(topic)}, topic:<{topic}>')
     # print(f'payload type:{type(payload)},\ndata:<{payload}>')
 
@@ -157,6 +166,10 @@ def on_message(client, userdata, msg):
     message_queue.put((topic, payload))
     # print(f'returned from .put')
 
+
+
+
+
     # global topic_rx_cnt
     # global throttle_rx_cnt_display
 
@@ -167,7 +180,38 @@ def on_message(client, userdata, msg):
 
 
 
+# Takes spx chain quote and updates quote_df entries 
+def update_quotes_from_chain(payload_dict):
+    global quote_df  # Assumes quote_df is declared globally elsewhere
+    if "data" not in payload_dict:
+        return
 
+    now_str = lambda: datetime.now().strftime('%H:%M:%S:%f')[:-3]  # hh:mm:ss:<ms> format
+
+    with quote_df_lock:
+        for item in payload_dict["data"]:
+            symbol = item.get("symbol")
+            if symbol is None:
+                continue
+
+            matching_rows = quote_df.index[quote_df["symbol"] == symbol].tolist()
+            if not matching_rows:
+                continue
+
+            row_idx = matching_rows[0]
+
+            
+
+            quote_df.at[row_idx, "bid"] = item.get("bid")
+            quote_df.at[row_idx, "ask"] = item.get("ask")
+            quote_df.at[row_idx, "last"] = item.get("last")
+
+            quote_df.at[row_idx, "bid_time"] = now_str()
+            quote_df.at[row_idx, "ask_time"] = now_str()
+            quote_df.at[row_idx, "last_time"] = now_str()
+
+            if DEBUG_CHAIN_SYM in symbol:
+                print(f'from  chain, updating {symbol}, new bid:{item.get("bid")}, new ask:{item.get("ask")}')
 
 
 
@@ -449,6 +493,11 @@ def process_stream(topic, payload_dict):
 
                                 else:
 
+                                    if DEBUG_CHAIN_SYM in opt_sym:
+                                        print(f'from stream, updating {opt_sym}, new bid:{opt_bid}, new ask:{opt_ask}')
+
+
+
                                     # print(f'opt_bid type:{type(opt_bid)}, value:{opt_bid}')
                                     # print(f'opt_ask type:{type(opt_ask)}, value:{opt_ask}')
 
@@ -493,6 +542,12 @@ def process_queried(topic, payload_dict):
                 # print(f" queried Ask Price: {value['quote']['askPrice']}")
                 opt_ask = float(value['quote']['askPrice'])
 
+
+            if DEBUG_CHAIN_SYM in opt_sym:
+                print(f'from  query, updating {opt_sym}, new bid:{opt_bid}, new ask:{opt_ask}')
+
+
+
             # print(f'queried adding_to_quote_tbl2 {opt_sym}, bid:{opt_bid}, ask:{opt_ask}, last:{opt_last}')
             add_to_quote_tbl2(opt_sym, opt_bid, opt_ask, opt_last)
 
@@ -520,6 +575,9 @@ def process_message():
     # topic, payload = message_queue.get()
 
     # throttle_market_close_check = 0
+
+
+    stream_message_cnt = 0
 
     while True:
         
@@ -575,10 +633,23 @@ def process_message():
             process_stream(topic, payload_dict)
             time_since_last_stream = 0
 
+            stream_message_cnt += 1
+
+            if stream_message_cnt == 3 or stream_message_cnt == 10:
+                print(f'grid: publishing chain request')
+                publish_chain_request()
+
 
         elif "schwab/queried" in topic:
             process_queried(topic, payload_dict)
             time_since_last_quereied = 0
+
+        elif "schwab/chain" in topic:
+            print(f'\n29300 received schwab/chain')
+            # print(f'received schwab/chain, payload_dict type:{type(payload_dict)}, data:\n{payload_dict}')
+            update_quotes_from_chain(payload_dict)
+            pass
+
 
         elif "schwab/spx/grid/request" in topic:
             # print(f'grid request topic type:{type(topic)}, topic:<{topic}>')
@@ -628,6 +699,19 @@ def process_message():
         time.sleep(0.1)
 
 
+mqtt_pub_lock = threading.Lock()        
+
+
+def publish_chain_request():
+
+    my_topic = CHAIN_REQUEST_TOPIC
+    my_payload = " "
+
+    with mqtt_pub_lock:
+        mqtt_client.publish(my_topic, my_payload)
+    pass
+
+
 # Function to publish grid via MQTT
 def publish_grid(quote_df_sorted, rows_with_nan_bid_ask, request_id):
     global mqtt_client
@@ -647,7 +731,8 @@ def publish_grid(quote_df_sorted, rows_with_nan_bid_ask, request_id):
     else:
         json_data = quote_df_sorted.to_json(orient='records')
 
-    mqtt_client.publish(my_topic, json_data)
+    with mqtt_pub_lock:
+        mqtt_client.publish(my_topic, json_data)
 
     # # Load JSON string into a Python dictionary for pretty printing
     # parsed_json = json.loads(json_data)
@@ -745,7 +830,7 @@ def grid_handling():
                 num_rows = len(quote_df)
                 if num_rows > 20:
                     if no_none_nan_flag == False:
-                        print(f'grid: ++++++ All bid and ask now have quoted values at {time_str} ++++++')
+                        print(f'grid: ++++++ All bid and ask now have quoted values at {time_str}, rows:{num_rows} ++++++')
                         no_none_nan_flag = True
 
             if total_reported_rows < total_rows:
@@ -944,6 +1029,12 @@ def initialize_quote_df():
         quote_df = pd.DataFrame(columns=['symbol', 'bid', 'bid_time', 'ask', 'ask_time', 'last', 'last_time'])
 
 
+def display_quote_df():
+    global quote_df, quote_df_lock
+
+    with quote_df_lock: 
+        print(f'displaying quote_df:\n{quote_df}')
+
 
 def grid_loop():
     global mqtt_client
@@ -1003,9 +1094,14 @@ def grid_loop():
         # mqtt_client.loop_forever()
 
         # loop while market is open
+        mkt_loop_cnt = 0
         while True:
             mqtt_client.loop(timeout=10.0)  # process network traffic, with a 1-second timeout
             # time.sleep(10) 
+
+            mkt_loop_cnt += 1
+            # if mkt_loop_cnt % 3 == 2:
+            #     display_quote_df()
 
             market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
             # market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=-599, close_offset=-844)
