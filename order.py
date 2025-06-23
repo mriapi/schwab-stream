@@ -463,7 +463,7 @@ def enter_ic_with_triggers(
             try:
                 # order_details = schwab_client.order_details(hash, order_id).json()
                 url = f"https://api.schwabapi.com/trader/v1/accounts/{rx_acctHash}/orders/{order_id}"
-                print(f'294-1 url:{url}')
+                # print(f'294-1 url:{url}')
 
                 headers = {
                     "accept": "application/json",
