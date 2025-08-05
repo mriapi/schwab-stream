@@ -323,6 +323,41 @@ def all_tokens_initialized():
 
 
 
+def refresh_token_minutes_left(token_file_data):
+
+    # print(f'token file data type: {type(token_file_data)}, data:\n{token_file_data}')
+
+    refresh_minutes_left = 0
+
+    try:
+
+        if 'refresh_token_issued' in token_file_data:
+
+            refresh_timestamp = datetime.fromisoformat(token_file_data['refresh_token_issued'])
+
+            now_utc = datetime.now(timezone.utc)
+            time_delta = now_utc - refresh_timestamp
+
+            days_delta = time_delta.days
+
+            transpired_refresh_minutes = int(time_delta.total_seconds() // 60)
+
+            refresh_minutes_left = MINUTES_IN_A_WEEK - transpired_refresh_minutes 
+            days_left_fl = float(refresh_minutes_left / 1440)
+
+            # print(f'days_delta:{days_delta}, transpired_refresh_minutes:{transpired_refresh_minutes}')
+            # print(f'refresh_minutes_left:{refresh_minutes_left}, days_left_fl{days_left_fl:.2f}')
+
+    except Exception as e:
+        print(f"20030 Error getting refresh token status: {e}")
+            
+
+    return refresh_minutes_left
+
+
+
+
+
 
 
 
@@ -368,9 +403,18 @@ def extract_tokens_mri(token_data):
 
     try:
 
+        now = datetime.now(timezone.utc)
+
+        refresh_dt = datetime.fromisoformat(refresh_token_issue_date)
+        transpired_refresh_minutes = (int)((now - refresh_dt).total_seconds() / 60)
+        refresh_minutes_left = MINUTES_IN_A_WEEK - transpired_refresh_minutes 
+        refresh_days_left = refresh_minutes_left/1440
+
+        print(f'transpired_refresh_minutes:{transpired_refresh_minutes}, minutes left:{refresh_minutes_left}, days_left:{refresh_days_left:.2f}')
+
         # print(f'access_token_issue_date:{access_token_issue_date}')
         access_dt = datetime.fromisoformat(access_token_issue_date)
-        now = datetime.now(timezone.utc)
+        
         transpired_access_minutes = (int)((now - access_dt).total_seconds() / 60)
         access_minutes_left = MINUTES_IN_A_HALF_HOUR - transpired_access_minutes
 
@@ -669,7 +713,7 @@ def get_tokens():
 
 
 
-
+    refresh_expired_flag = False
 
 
 
@@ -683,14 +727,31 @@ def get_tokens():
 
 
     try:
+
+        refresh_minutes_left = 0
+
+
+
+
         token_file_data = read_tokens_mri_file()
         # print(f'2930 got token_file_data')
         # print(f'token_file_data type:{type(token_file_data)}, data:\n{token_file_data}')
 
 
-        extract_tokens_mri(token_file_data)
-        # print(f'2932 extracted token_file_data')
-        # print(f'9028 refersh_token:{refresh_token}\naccess_token:{access_token}')
+        print(f'calling refresh_token_minutes_left()')
+        refresh_minutes_left = refresh_token_minutes_left(token_file_data)
+        print(f'my_refresh_minutes_left:{refresh_minutes_left}')
+
+        if refresh_minutes_left < 1:
+            refresh_expired_flag = True
+
+
+
+        if not refresh_expired_flag:
+
+            extract_tokens_mri(token_file_data)
+            # print(f'2932 extracted token_file_data')
+            # print(f'9028 refersh_token:{refresh_token}\naccess_token:{access_token}')
 
 
     except Exception as e:
@@ -704,15 +765,17 @@ def get_tokens():
 
     try:
 
-        account_file_data = read_acct_mri_file()
-        # print(f'2940 got account_file_data')
+        if not refresh_expired_flag:
+
+            account_file_data = read_acct_mri_file()
+            # print(f'2940 got account_file_data')
 
 
 
-        # print(f'8920 account_file_data  type:{type(account_file_data )}, data:\n{account_file_data }')
-        extract_account_mri(account_file_data)
-        # print(f'2942 extracted account_file_data')
-        # print(f'9029 hashVal:{hashVal}\nacctNum:{acctNum}')
+            # print(f'8920 account_file_data  type:{type(account_file_data )}, data:\n{account_file_data }')
+            extract_account_mri(account_file_data)
+            # print(f'2942 extracted account_file_data')
+            # print(f'9029 hashVal:{hashVal}\nacctNum:{acctNum}')
 
 
     except Exception as e:
@@ -756,7 +819,7 @@ def get_tokens():
 
 
     
-    if arg_one == "refresh" or all_initialized_flag == False:
+    if arg_one == "refresh" or all_initialized_flag == False or refresh_expired_flag == True:
 
 
         if arg_one == "refresh":

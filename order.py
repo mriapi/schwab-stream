@@ -7,6 +7,10 @@ import mri_schwab_lib
 
 
 
+LONG_LEG_STOP_FACTOR = 1.25
+
+
+
 
 def enter_spread_with_triggers(real_flag, schwab_client, hash, opt_type, short_leg, long_leg, qty):
     # print(f'enter spread opt_type:{opt_type}, short:{short_leg}, long:{long_leg}, qty:{qty}')
@@ -90,7 +94,7 @@ def enter_spread_with_triggers(real_flag, schwab_client, hash, opt_type, short_l
                 return order_form, order_id, order_details
 
         else:
-            info_str = f'Real (Live) trading mode is False.  Order NOT placed'
+            info_str = f'88001 Real/live trading mode flag is False.  Order NOT placed'
             print(info_str)
             meic.post_tranche_data(info_str)
             meic.persist_string(info_str)
@@ -121,7 +125,7 @@ def generate_order_STO_spread_with_triggers(short_sym, short_bid, long_sym, long
     # TODO: FIX_ME: comment this out
     price += 5
 
-    stop_price = original_price * 2 + (long_ask * 1.2) - 0.10
+    stop_price = original_price * 2 + (long_ask * LONG_LEG_STOP_FACTOR) - 0.10
 
 
 
@@ -484,7 +488,7 @@ def enter_ic_with_triggers(
                 return order_form, order_id, order_details
 
         else:
-            info_str = f'Real (Live) trading mode is False.  Order NOT placed'
+            info_str = f'88002 Real/live trading mode flag is False.  Order NOT placed'
             print(info_str)
             meic.post_tranche_data(info_str)
             meic.persist_string(info_str)
@@ -536,7 +540,7 @@ def generate_order_STO_IC_with_triggers(
 
 
     #calculate call spread stop price
-    call_stop_price = call_original_price * 2 + (call_long_ask * 1.2) - 0.10
+    call_stop_price = call_original_price * 2 + (call_long_ask * LONG_LEG_STOP_FACTOR) - 0.10
 
     # Apply conditional stop_price rounding based on SPX order increment rules
     if call_stop_price >= 3.00:
@@ -546,7 +550,7 @@ def generate_order_STO_IC_with_triggers(
 
 
     #calculate put spread stop price
-    put_stop_price = put_original_price * 2 + (put_long_ask * 1.2) - 0.10
+    put_stop_price = put_original_price * 2 + (put_long_ask * LONG_LEG_STOP_FACTOR) - 0.10
 
     # Apply conditional stop_price rounding based on SPX order increment rules
     if put_stop_price >= 3.00:
@@ -558,7 +562,7 @@ def generate_order_STO_IC_with_triggers(
 
 
 
-    info_str = f'\nGenerating IC order for\n   call {call_short_sym}/{call_long_sym}\n   put {put_short_sym}/{put_long_sym}'
+    info_str = f'\nGenerating IC order for\n   call {call_short_sym}/{call_long_sym}\n    put {put_short_sym}/{put_long_sym}'
     print(info_str)
     meic.post_tranche_data(info_str)
     meic.persist_string(info_str)

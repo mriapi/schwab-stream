@@ -133,10 +133,14 @@ def is_nyse_open_today():
 
     # Get NYSE trading calendar
     nyse = mcal.get_calendar("NYSE")
+    # print(f'mo: nyse type:{type(nyse)}')
 
     # Get today's date and check the nyse schedule
     today = datetime.today().strftime("%Y-%m-%d")
+    # print(f'mo: today type:{type(today)}')
+
     schedule = nyse.schedule(start_date=today, end_date=today)
+    # print(f'mo: schedule type:{type(schedule)}')
 
     # # Get tomorrow's date and check the nyse schedule
     # tomorrow = (datetime.today() + timedelta(days=1)).strftime("%Y-%m-%d")

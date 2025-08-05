@@ -1,5 +1,7 @@
 import threading
 import queue
+import logging
+from paho.mqtt.enums import CallbackAPIVersion
 import paho.mqtt.client as mqtt
 import time
 import os
@@ -37,10 +39,76 @@ import signal
 # #               11:13    11:28    11:43
 # entry_times = ["14:15", "14:28", "14:43"]
 
-#                9:43     9:58    10:28    10:58    11:13    11:28
-entry_times = ["12:43", "12:58", "13:28", "13:58", "14:13", "14:28"]
+
+# #               10:43    10:58    11:43
+# entry_times = ["13:43", "13:58", "14:43"]
+
+
+# #                9:58    10:28    10:58    11:28
+# entry_times = ["12:58", "13:28", "13:58", "14:28"]
+
+# #                9:43     9:58    10:28    10:58    11:13    11:28
+# entry_times = ["12:43", "12:58", "13:28", "13:58", "14:13", "14:28"]
+
+
+# #               09:28    09:58    10:28    10:58    11:28
+# meic_times = ["12:28", "12:58", "13:46", "13:58", "14:28"]
+
+#              07:02    07:44    08:45    09:58    10:13   CLT TRIP DAY
+meic_times = ["09:56", "10:44", "12:04", "12:58", "13:14"]
+
 
 live_trading_flag = True
+
+
+trade_dates = ["8/4/25", "8/5/25", "8/6/25", "8/7/25", "8/7/25"]
+no_trade_dates = [
+    # "08/04/25",
+    "08/20/25",
+    "8/29/25",
+    "9/1/25",
+    "9/17/25",
+    "9/30/25",
+    "10/8/25",
+    "10/29/25",
+    "10/31/25",
+    "11/19/25",
+    "11/27/25",
+    "11/28/25",
+    "12/10/25",
+    "12/24/25",
+    "12/25/25",
+    "12/31/25"
+]
+
+
+
+entry_times = None
+
+
+
+
+
+logging.basicConfig(
+    filename="mri_log2.log",  # Log file name
+    level=logging.INFO,  # Set logging level
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+
+
+
+
+requested_grid_time = None
+requested_grid_flag = False
+
+global gbl_market_open_flag
+gbl_market_open_flag = False
+
+trade_today_flag = False
+
+
+
 
 
 # def show_times_raw():
@@ -67,20 +135,38 @@ def show_times_raw(times):
 
 
 def show_times(entry_times):
-    print("\nEastern times")
-    times_as_str = [time.strftime("%H:%M") for time in entry_times]
-    print(",    ".join(times_as_str))
 
-    times_as_12_hour = [datetime.strptime(t, "%H:%M").strftime("%I:%M %p") for t in times_as_str]
-    print(", ".join(times_as_12_hour))
+    # print("\nEastern times")
+    # times_as_str = [time.strftime("%H:%M") for time in entry_times]
+    # print(",    ".join(times_as_str))
 
-    print("\nPacific Times")
-    pacific_times = [(datetime.strptime(t, "%H:%M") - timedelta(hours=3)).strftime("%I:%M %p") for t in times_as_str]
-    print(", ".join(pacific_times))
+    # times_as_12_hour = [datetime.strptime(t, "%H:%M").strftime("%I:%M %p") for t in times_as_str]
+    # print(", ".join(times_as_12_hour))
+
+    # print("\nPacific Times")
+    # pacific_times = [(datetime.strptime(t, "%H:%M") - timedelta(hours=3)).strftime("%I:%M %p") for t in times_as_str]
+    # print(", ".join(pacific_times))
+    # print()
+
+
+
+    # Assuming entry_times is a list of datetime.time objects
+    print("Eastern times:  " + ",    ".join(t.strftime("%H:%M") for t in entry_times))
+    print("Eastern times:  " + ", ".join(t.strftime("%I:%M %p") for t in entry_times))
+
+    # Convert to Pacific by subtracting 3 hours (only works if datetime.today() is used as a base)
+    pacific_times = []
+    for t in entry_times:
+        # Combine with today's date to create a full datetime, then subtract 3 hours
+        dt = datetime.combine(datetime.today(), t) - timedelta(hours=3)
+        pacific_times.append(dt.strftime("%I:%M %p"))
+
+    print("Pacific Times:  " + ", ".join(pacific_times))
+
     print()
 
 
-def show_pacicif_times(entry_times):
+def show_pacific_times(entry_times):
         
         return
 
@@ -164,7 +250,9 @@ eastern = pytz.timezone('US/Eastern')
 
 
 # Convert entry times to time objects
-entry_times = [datetime.strptime(t, "%H:%M").time() for t in entry_times]
+# entry_times = [datetime.strptime(t, "%H:%M").time() for t in entry_times]
+entry_times = [datetime.strptime(t, "%H:%M").time() for t in meic_times]
+
 
 # Get the current time in Eastern Time zone
 current_time = datetime.now(eastern)
@@ -189,7 +277,7 @@ gbl_long_positions = []
 
 quote_df_lock = threading.Lock()
 
-global mqtt_client
+mqtt_client = None
 
 global gbl_total_message_count
 gbl_total_message_count = 0
@@ -215,6 +303,47 @@ rx_channel = None
 rx_correlId = None
 rx_customerId = None
 rx_functionId = None
+
+
+def initialize_globals():
+    
+    global requested_grid_time
+    global requested_grid_flag
+    global entry_times
+    global processed_times
+    global positions_df
+    global gbl_short_positions, gbl_long_positions
+    
+    requested_grid_time = None
+    requested_grid_flag = False
+
+
+    # Define the Eastern Time zone
+    eastern = pytz.timezone('US/Eastern')
+
+
+    # Convert entry times to time objects
+    # entry_times = [datetime.strptime(t, "%H:%M").time() for t in entry_times]
+
+    entry_times = None
+    entry_times = [datetime.strptime(t, "%H:%M").time() for t in meic_times]
+
+
+    # Get the current time in Eastern Time zone
+    current_time = datetime.now(eastern)
+
+    # Load processed_times with entry times that have already been crossed
+    processed_times = {
+        entry_time for entry_time in entry_times
+        if eastern.localize(datetime.combine(current_time.date(), entry_time)) <= current_time
+    }
+
+    # Create an empty DataFrame with the desired headers
+    positions_df = pd.DataFrame(columns=["sym", "put_call", "qty", "trade_price", "now_price"])
+
+    gbl_short_positions = []
+    gbl_long_positions = []
+        
 
 
 
@@ -255,8 +384,13 @@ CREDS_REQUEST_TOPIC = "mri/creds/request"
 CREDS_INFO_TOPIC = "mri/creds/info/#"
 MRI_CREDS_INFO_PREFIX = "mri/creds/info"
 
+SCHWAB_NOTIFY_TOPIC_SUBSCRIPTION = "schwab/notify/#"
+SCHWAB_NOTIFY_TOPIC_FILTER = "schwab/notify"
+
+
 # Callback function when the client connects to the broker
-def on_connect(mqtt_client, userdata, flags, rc):
+# def on_connect(mqtt_client, userdata, flags, rc):
+def on_connect(client, userdata, flags, rc, properties):
 
     if rc == 0:
         print("meic: Connected to MQTT broker.")
@@ -269,55 +403,83 @@ def on_connect(mqtt_client, userdata, flags, rc):
         mqtt_client.subscribe(CREDS_INFO_TOPIC )
         print(f"meic: Subscribed to topic: {CREDS_INFO_TOPIC }")
 
+        
+        mqtt_client.subscribe(SCHWAB_NOTIFY_TOPIC_SUBSCRIPTION)
+        print(f"Subscribed to topic: {SCHWAB_NOTIFY_TOPIC_SUBSCRIPTION}")
+
     else:
         print(f"Failed to connect with error code: {rc}")
 
 # Callback function when a message is received
 def on_message(mqtt_client, userdata, msg):
-    topic = msg.topic
-    payload = msg.payload.decode()
 
-    # print(f"MEIC on_message() Received topic type:{type(topic)}, payload type:{type(payload)}")
-    # print(f"MEIC on_message() Received topic:<{topic}>,\n    payload:{payload}")
-
-
-    # payload may be empty or may not be json data
     try:
-        # Attempt to parse the JSON data
-        payload_dict = json.loads(payload)
 
-    except json.JSONDecodeError:
-        print("meic Payload is not valid JSON")
-        return
+
+
+
+        topic = msg.topic
+        payload = msg.payload.decode()
+
+        # print(f"MEIC on_message() Received topic type:{type(topic)}, payload type:{type(payload)}")
+        # print(f"MEIC on_message() Received topic:<{topic}>,\n    payload:{payload}")
+
+        if "heartbeat" in payload:
+            if not gbl_market_open_flag:
+                print(f'meic on_message notify heartbeat received')
+
+            return
+            
+      
+
+        # payload may be empty or may not be json data
+        try:
+            # Attempt to parse the JSON data
+            payload_dict = json.loads(payload)
+
+        except json.JSONDecodeError:
+            print("meic Payload is not valid JSON")
+            return
+
+        except Exception as e:
+            print(f"meic An error occurred: {e} while trying load json data")
+            return
+        
+        if MRI_CREDS_INFO_PREFIX in topic:
+            # print(f'03 Received MRI CREDS INFO topic:{topic}')
+                    # Convert string to JSON
+            payload_json = json.loads(payload)
+
+            # Extract values with prefixed variable names
+            for key, value in payload_json.items():
+                globals()[f"rx_{key}"] = value
+
+            # print(f'\n\nrx_refreshToken:{rx_refreshToken}')
+            # print(f'rx_accessToken:{rx_accessToken}')
+            # print(f'rx_acctHash:{rx_acctHash}')
+            # print(f'rx_streamerUrl:{rx_streamerUrl}')
+            # print(f'rx_customerId:{rx_customerId}')
+            # print(f'rx_correlId:{rx_correlId}')
+            # print(f'rx_channel:{rx_channel}')
+            # print(f'rx_functionId:{rx_functionId}\n')
+            return
+            
+
+        # print(f"01 Received message on topic:<{topic}> payload:\n{json.dumps(payload_dict, indent=2)}")
+
+        # Put the topic and payload into the queue as a tuple
+        message_queue.put((topic, payload))
 
     except Exception as e:
-        print(f"meic An error occurred: {e} while trying load json data")
+
+        current_time_local = datetime.now()  # Get the current datetime object for comparison
+        current_time_local_str = current_time_local.strftime('%H:%M:%S')
+
+        info_str = f'grid general on_message exception: {e} at {current_time_local_str}'
+        print(info_str)
+        logging.error(info_str)
+
         return
-    
-    if MRI_CREDS_INFO_PREFIX in topic:
-        # print(f'03 Received MRI CREDS INFO topic:{topic}')
-                # Convert string to JSON
-        payload_json = json.loads(payload)
-
-        # Extract values with prefixed variable names
-        for key, value in payload_json.items():
-            globals()[f"rx_{key}"] = value
-
-        # print(f'\n\nrx_refreshToken:{rx_refreshToken}')
-        # print(f'rx_accessToken:{rx_accessToken}')
-        # print(f'rx_acctHash:{rx_acctHash}')
-        # print(f'rx_streamerUrl:{rx_streamerUrl}')
-        # print(f'rx_customerId:{rx_customerId}')
-        # print(f'rx_correlId:{rx_correlId}')
-        # print(f'rx_channel:{rx_channel}')
-        # print(f'rx_functionId:{rx_functionId}\n')
-        return
-        
-
-    # print(f"01 Received message on topic:<{topic}> payload:\n{json.dumps(payload_dict, indent=2)}")
-
-    # Put the topic and payload into the queue as a tuple
-    message_queue.put((topic, payload))
 
 
 
@@ -582,7 +744,7 @@ def display_syms_only(option_list):
         return
 
 
-IS_OPEN_OPEN_OFFSET = 3
+IS_OPEN_OPEN_OFFSET = 2
 
 
 # Thread function to process messages from the queue
@@ -591,6 +753,9 @@ def process_message():
     global gbl_total_message_count
     global end_flag
     global processed_times
+    global gbl_market_open_flag
+
+    global requested_grid_time, requested_grid_flag
 
     print(f'process message thread checking for market open')
     market_open_flag = False
@@ -598,6 +763,7 @@ def process_message():
         if end_flag:
             return
         market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
+        gbl_market_open_flag = market_open_flag
         time.sleep(2)
 
     while True:
@@ -617,6 +783,23 @@ def process_message():
             topic, payload = message_queue.get(timeout=1)  # 1 second timeout
 
         except queue.Empty: 
+
+            now_time = datetime.now()
+        
+            if requested_grid_flag and requested_grid_time:
+                elapsed = now_time - requested_grid_time
+                print(f"20940 Elapsed grid request time: {elapsed.total_seconds():.3f} seconds")
+
+                if elapsed.total_seconds() > 4:
+                    info_str = f'timed out waiting for grid data, elapsed seconds:{elapsed.total_seconds():.3f}'
+                    print(info_str)
+                    persist_string(info_str)
+                    requested_grid_flag = False
+                    requested_grid_time = None
+
+
+
+
             continue
 
 
@@ -632,14 +815,27 @@ def process_message():
 
 
         if "schwab/spx/grid/response" in topic:
+
+            if not requested_grid_flag:
+                print(f'meic got unexpected grid response')
+                continue
+
+
+            end_time = datetime.now()
+            now_time_ms_str = end_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
             
             request_id = topic.split('/')[-1]
+
+            # print(f'\n<><><><><><><><><><><><><><><><><><><><><><><><><><><>')
+            print(f'meic got grid request response at {now_time_ms_str}, received request id:{request_id}, prev req id:{prev_grid_request_id} ')
 
             if "meic" in request_id:
                 if request_id != prev_grid_request_id:
                     print(f'Request ID mismatch!!! prev_grid_request_id:<{prev_grid_request_id}>, received request_id:<{request_id}>')
                     time.sleep(0.01)
                     continue
+
+            requested_grid_flag = False
 
 
             end_time = datetime.now()
@@ -849,111 +1045,178 @@ def process_message():
 
                 entry_time_count = 0
 
-                show_times_raw(entry_times)
-
-                for entry_time in entry_times:
-
-                    entry_time_count += 1
-
-                    # print(f'entry_time_count:{entry_time_count}, entry_time:{entry_time}')
-                    
-                    # Convert entry_time to today's datetime in Eastern Time
-                    entry_time_today = eastern.localize(datetime.combine(current_time.date(), entry_time))
-
-                    # Check if the time is crossed but not processed
-                    if entry_time_today <= current_time and entry_time not in processed_times:
-
-                        info_str = f'{current_time_str} matches a new entry time'
-                        persist_string(info_str)
-                        print(info_str)
+                # show_times_raw(entry_times)
 
 
-                        print()
-                        new_entry_match_flag = True
+                if live_trading_flag:
+                    info_str = "LIVE"
+                else:
+                    info_str = "PAPER"
+
+                # print(f'Scheduled Entry Times ({info_str}):')
+                # show_times(entry_times)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                today_str = datetime.today().strftime("%#m/%#d/%y")
+
+                if not trade_today_flag:
+                    print(f'today, {today_str}, is NOT NOT NOT NOT a trading day.  entry times will not be checked')
+
+
+                else:
+                    if live_trading_flag:
+                        info_str = "LIVE"
+                    else:
+                        info_str = "PAPER"
+
+                    print(f'today, {today_str}, is a trading day and entry times will be checked, ')
+                    # print(f'770E Scheduled Entry Times ({info_str}):')
+                    # show_times(entry_times)
+
                         
+                    for entry_time in entry_times:
 
-                        # Check if it's within 5 minutes of the crossed time
-                        if (current_time - entry_time_today).total_seconds() <= 300:
-                            placed_order_flag = True
+                        entry_time_count += 1
 
-                            if live_trading_flag == True:
-                                live_str = "LIVE LIVE LIVE LIVE"
+                        # print(f'entry_time_count:{entry_time_count}, entry_time:{entry_time}')
+                        
+                        # Convert entry_time to today's datetime in Eastern Time
+                        entry_time_today = eastern.localize(datetime.combine(current_time.date(), entry_time))
+
+                        # Check if the time is crossed but not processed
+                        if entry_time_today <= current_time and entry_time not in processed_times:
+
+                            info_str = f'{current_time_str} matches a new entry time'
+                            persist_string(info_str)
+                            print(info_str)
+
+
+                            print()
+                            new_entry_match_flag = True
+                            
+
+                            # Check if it's within 5 minutes of the crossed time
+                            if (current_time - entry_time_today).total_seconds() <= 300:
+                                placed_order_flag = True
+
+                                if live_trading_flag == True:
+                                    live_str = "LIVE LIVE LIVE LIVE"
+
+                                else:
+                                    live_str = "PAPER PAPER PAPER"
+
+
+                                try:
+                                    target_credit_fl = float(target_credit)
+
+                                except Exception as e:
+                                    target_credit_fl = 0.00
+
+                                info_str = f'\n\n     !PLACING {live_str} ORDER! at {current_time_str} (Eastern), spx:{spx_price}\n  atm straddle:{atm_straddle:.2f}, target credit:{target_credit_fl:.2f} real trading?:{live_trading_flag}\n\n'
+                                print(info_str)
+                                post_tranche_data(info_str)
+                                persist_string(info_str)
+
+                                tranche_time = current_time_str
+                                tranche_spx_str = f'{spx_price:.2f}'
+                                tranche_atm_straddle_str = f'{atm_straddle:.2f}'
+                                tranche_target_credit_str = f'{target_credit_fl:.2f}'
+
+
+                                # short_sym = call_short[0]['symbol']
+                                # short_bid = call_short[0]['bid']
+                                # long_sym = call_long[0]['symbol']
+                                # long_ask = call_long[0]['ask']
+                                # print(f'call short_sym:{short_sym}, short_bid:{short_bid}, long_sym:{long_sym}, long_ask:{long_ask}, ')
+
+
+
+                                # enter IC by placing separate orders for each spread
+                                # call_order_form, call_order_id, call_order_details = \
+                                #     order.enter_spread_with_triggers(live_trading_flag, schwab_client, my_hash, "CALL", call_short, call_long, qty=1)
+                                
+                                # put_order_form, put_order_id, put_order_details = \
+                                #     order.enter_spread_with_triggers(live_trading_flag, schwab_client, my_hash, "PUT", put_short, put_long, qty=1)
+                            
+                                # print()
+                                # print(f'call_order_form type:{type(call_order_form)}, data:{call_order_form}')
+                                # print(f'call_order_id type:{type(call_order_id)}, value:{call_order_id}')
+                                # print(f'call_order_details type:{type(call_order_details)}, value:{call_order_details}')
+
+                                # print()
+                                # print(f'put_order_form type:{type(put_order_form)}, data:{put_order_form}')
+                                # print(f'put_order_id type:{type(put_order_id)}, value:{put_order_id}')
+                                # print(f'put_order_details type:{type(put_order_details)}, value:{put_order_details}')
+
+                                # print()
+
+
+
+
+
+                                # enter IC by placing separate order for the full IX
+                                ic_order_form, ic_order_id, ic_order_details = order.enter_ic_with_triggers(
+                                        live_trading_flag, 
+                                        rx_accessToken, 
+                                        rx_acctHash, 
+                                        call_short, 
+                                        call_long,  
+                                        put_short, 
+                                        put_long, 
+                                        1 # quantity of contracts
+                                        )
+                                
+                                if live_trading_flag:
+                                    try:
+                                        print(f'\n89002 ic order form type:{type(ic_order_form)}, data:{ic_order_form}')
+                                        print(f'\n89004 ic order id type:{type(ic_order_id)}, data:{ic_order_id}')
+                                        print(f'\n89006 ic order details type:{type(ic_order_details)}, data:{ic_order_details}')
+
+                                    except Exception as e:
+                                        print(f'\n89089 exception trying to display live order data, e:{e}')
+                                
+
+
+
 
                             else:
-                                live_str = "PAPER PAPER PAPER"
-
-
-                            try:
-                                target_credit_fl = float(target_credit)
-
-                            except Exception as e:
-                                target_credit_fl = 0.00
-
-                            info_str = f'\n\n     !PLACING {live_str} ORDER! at {current_time_str} (Eastern), spx:{spx_price}\n  atm straddle:{atm_straddle:.2f}, target credit:{target_credit_fl:.2f} real trading?:{live_trading_flag}\n\n'
-                            print(info_str)
-                            post_tranche_data(info_str)
-                            persist_string(info_str)
-
-
-                            # short_sym = call_short[0]['symbol']
-                            # short_bid = call_short[0]['bid']
-                            # long_sym = call_long[0]['symbol']
-                            # long_ask = call_long[0]['ask']
-                            # print(f'call short_sym:{short_sym}, short_bid:{short_bid}, long_sym:{long_sym}, long_ask:{long_ask}, ')
-
-
-
-                            # enter IC by placing separate orders for each spread
-                            # call_order_form, call_order_id, call_order_details = \
-                            #     order.enter_spread_with_triggers(live_trading_flag, schwab_client, my_hash, "CALL", call_short, call_long, qty=1)
-                            
-                            # put_order_form, put_order_id, put_order_details = \
-                            #     order.enter_spread_with_triggers(live_trading_flag, schwab_client, my_hash, "PUT", put_short, put_long, qty=1)
+                                info_str = f"Skipped task for entry time {entry_time} (more than 5 minutes late)"
+                                persist_string(info_str)
+                                print(info_str)
                         
-                            # print()
-                            # print(f'call_order_form type:{type(call_order_form)}, data:{call_order_form}')
-                            # print(f'call_order_id type:{type(call_order_id)}, value:{call_order_id}')
-                            # print(f'call_order_details type:{type(call_order_details)}, value:{call_order_details}')
 
-                            # print()
-                            # print(f'put_order_form type:{type(put_order_form)}, data:{put_order_form}')
-                            # print(f'put_order_id type:{type(put_order_id)}, value:{put_order_id}')
-                            # print(f'put_order_details type:{type(put_order_details)}, value:{put_order_details}')
-
-                            # print()
-
-
-
-
-
-                            # enter IC by placing separate order for the full IX
-                            ic_order_form, ic_order_id, ic_order_details = order.enter_ic_with_triggers(
-                                    live_trading_flag, 
-                                    rx_accessToken, 
-                                    rx_acctHash, 
-                                    call_short, 
-                                    call_long,  
-                                    put_short, 
-                                    put_long, 
-                                    1 # quantity of contracts
-                                    )
-                            
-
-
-
+                            # Mark the time as processed
+                            processed_times.add(entry_time)
 
                         else:
-                            info_str = f"Skipped task for entry time {entry_time} (more than 5 minutes late)"
-                            persist_string(info_str)
-                            print(info_str)
-                       
+                            # print(f'{current_time_str} is not a new entry time')
+                            pass
 
-                        # Mark the time as processed
-                        processed_times.add(entry_time)
 
-                    else:
-                        # print(f'{current_time_str} is not a new entry time')
-                        pass
+
+                    
+
+
+
+
+
+
+
 
                 if new_entry_match_flag:
                     print(f'{current_time_str} ({current_time_local_str} Pacific) IS a new entry time')
@@ -993,15 +1256,20 @@ def process_message():
 
 
 
-            atm_string = f'SPX:{spx_price:.2f}, ATM straddle:{atm_straddle:.2f}, credit target:{target_credit:.2f}'
-            print(atm_string)
-            persist_string(atm_string)
-            display_spread("Call", call_spread)
-            display_spread(" Put", put_spread)
+            # atm_string = f'SPX:{spx_price:.2f}, ATM straddle:{atm_straddle:.2f}, credit target:{target_credit:.2f}'
+            # print(atm_string)
+            # persist_string(atm_string)
+
+            # info_string = ""
+            # print(info_string)
+            # persist_string(info_string)
+
+            # display_spread("Call", call_spread)
+            # display_spread(" Put", put_spread)
 
 
             if 'net' in call_spread or 'net' in put_spread:
-                display_str = "Symbols:"
+                display_str = f'\nSymbols:'
                 persist_string(display_str)
                 print(display_str)
 
@@ -1019,6 +1287,24 @@ def process_message():
                 put_syms_display = " Put " + put_syms
                 persist_string(put_syms_display)
                 print(put_syms_display)
+
+
+            info_string = ""
+            print(info_string)
+            persist_string(info_string)
+
+
+            atm_string = f'SPX:{spx_price:.2f}, ATM straddle:{atm_straddle:.2f}, credit target:{target_credit:.2f}'
+            print(atm_string)
+            persist_string(atm_string)
+
+
+            info_string = ""
+            print(info_string)
+            persist_string(info_string)
+
+            display_spread("Call", call_spread)
+            display_spread(" Put", put_spread)
 
 
 
@@ -1057,7 +1343,11 @@ def publish_grid_request():
 
     topic = topic + req_id
 
-    # print(f'publishing topic:<{topic}>')
+
+    now_time = datetime.now()
+    now_time_str = now_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
+
+    print(f'meic: {now_time_str} publishing grid request topic:<{topic}>, req id:{req_id}')
 
     mqtt_client.publish(topic, " ")
 
@@ -1104,12 +1394,75 @@ def publish_get_acct_details_request():
 
 
 
+def normalize_date(date_str):
+    for fmt in ["%m/%d/%y", "%m/%d/%Y"]:
+        try:
+            return datetime.strptime(date_str, fmt).date()
+        except ValueError:
+            continue
+    raise ValueError(f"Unrecognized date format: {date_str}")
+
+
+def check_trading_day():
+    global trade_today_flag
+
+    trade_today_flag = False
+
+
+    # Normalize today's date
+    today = datetime.today().date()
+
+    # Check if any normalized no-trade date matches today
+    is_no_trade_day = any(normalize_date(dt) == today for dt in no_trade_dates)
+
+
+    today_str = datetime.today().strftime("%#m/%#d/%y")
+
+    # if today is a 'no-trade' day
+    if is_no_trade_day:
+        trade_today_flag = False
+        print(f'today, {today_str}, is NOT a trading day,  trade_today_flag:{trade_today_flag}')
+
+    else:
+        trade_today_flag = True
+        print(f'today, {today_str}, IS a trading day,  trade_today_flag:{trade_today_flag}')
+
+
+
+
+    return
+
+
+
+
+
+
+
+
+    # Windows-specific date formatting (avoids leading zeros)
+    today_str = datetime.today().strftime("%#m/%#d/%y")
+    if today_str in no_trade_dates:
+        trade_today_flag = False
+        print(f'today, {today_str}, is NOT a trading day, flag:{trade_today_flag}')
+        
+    
+    else:
+        trade_today_flag = True
+        print(f'today, {today_str}, IS a trading day, flag:{trade_today_flag}')
+
+
+
+
+
 
 def meic_entry():
     global quote_df
     global end_flag
     global gbl_short_positions
     global gbl_long_positions
+    global gbl_market_open_flag
+
+    global requested_grid_time, requested_grid_flag
 
 
     # outer meic loop
@@ -1123,13 +1476,30 @@ def meic_entry():
             if end_flag:
                 return
             market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
+            gbl_market_open_flag = market_open_flag
+            
             time.sleep(5)
             market_open_wait_cnt += 1
             if market_open_wait_cnt % 12 == 11:
                 current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
 
                 print(f'\nmeic: market not open, easten time:{current_eastern_hhmmss}')
-                show_times_raw(entry_times)
+
+                # show_times_raw(entry_times)
+
+                if live_trading_flag:
+                    info_str = "LIVE"
+                else:
+                    info_str = "PAPER"
+
+
+                check_trading_day()
+
+
+                print(f'770C Scheduled Entry Times ({info_str}):')
+                show_times(entry_times)
+                # print()
+
 
             
 
@@ -1161,6 +1531,8 @@ def meic_entry():
 
             if inner_miec_cnt % 10 == 9:
                 market_open_flag, current_eastern_time, temp_secs_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
+                gbl_market_open_flag = market_open_flag
+                
                 if not market_open_flag:
                     break # break out of inner meic loop and back into the outer meic loop
             
@@ -1254,10 +1626,24 @@ def meic_entry():
                 # now_time_str = now_time.strftime('%H:%M:%S.%f')[:-3]
                 now_time_str = now_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
 
+                requested_grid_time = now_time
+                requested_grid_flag = True
+
 
             
-                print(f'\n=============================\nRequesting SPX grid data at {now_time_str }')
+                print(f'\n==============================================================================')
+                print(f'Requesting SPX grid data at {now_time_str }')
                 publish_grid_request()
+
+                if live_trading_flag:
+                    info_str = "LIVE"
+                else:
+                    info_str = "PAPER"
+
+                check_trading_day()
+
+                print(f'770B Scheduled Entry Times ({info_str}):')
+                show_times(entry_times)
 
 
 
@@ -1312,11 +1698,16 @@ def is_market_open():
 
 
 def wait_for_market_to_open():
+    global gbl_market_open_flag
+
+
     throttle_wait_display = 0
     print(f'meic: checking for market open 2')
 
     while True:
         market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
+        gbl_market_open_flag = market_open_flag
+        
         if market_open_flag:
             break
 
@@ -1362,8 +1753,8 @@ def mqtt_services():
 
 
     # Initialize MQTT client
-    mqtt_client = mqtt.Client()
-    # mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    # mqtt_client = mqtt.Client()
+    mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
 
     # Assign callback functions
     mqtt_client.on_connect = on_connect
@@ -1373,27 +1764,29 @@ def mqtt_services():
     print("Connecting to MQTT broker...")
     mqtt_client.connect(BROKER_ADDRESS)
 
+    mqtt_client.loop_forever()
 
-    while True:
-        mqtt_client.loop(timeout=1.0)  # process network traffic, with a 1-second timeout
-        # time.sleep(1) 
 
-        # market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
-        # if market_open_flag == False:
-        #     end_flag = True
-        #     current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
-        #     print(f'meic: Market is now closed at {current_eastern_hhmmss}, shutting down MQTT')
-        #     mqtt_client.loop_stop()  # Stop the MQTT loop
-        #     mqtt_client.disconnect()  # Disconnect from the MQTT broker
-        #     break
+    # while True:
+    #     mqtt_client.loop(timeout=1.0)  # process network traffic, with a 1-second timeout
+    #     # time.sleep(1) 
 
-        if end_flag == True:
-            mqtt_client.loop_stop()  # Stop the MQTT loop
-            mqtt_client.disconnect()  # Disconnect from the MQTT broker
-            break
+    #     # market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
+    #     # if market_open_flag == False:
+    #     #     end_flag = True
+    #     #     current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
+    #     #     print(f'meic: Market is now closed at {current_eastern_hhmmss}, shutting down MQTT')
+    #     #     mqtt_client.loop_stop()  # Stop the MQTT loop
+    #     #     mqtt_client.disconnect()  # Disconnect from the MQTT broker
+    #     #     break
 
-    mqtt_client.loop_stop()  # Stop the MQTT loop
-    mqtt_client.disconnect()  # Disconnect from the MQTT broker
+    #     if end_flag == True:
+    #         # mqtt_client.loop_stop()  # Stop the MQTT loop
+    #         # mqtt_client.disconnect()  # Disconnect from the MQTT broker
+    #         break
+
+    # mqtt_client.loop_stop()  # Stop the MQTT loop
+    # mqtt_client.disconnect()  # Disconnect from the MQTT broker
     
 
 
@@ -1475,9 +1868,13 @@ def meic_loop():
     # Register the signal handler in the **main thread** (not inside the keyboard thread)
     signal.signal(signal.SIGINT, signal_handler)
 
+    initialize_globals()
+
 
 
     try:
+
+
 
 
         app_key, secret_key, my_tokens_file = load_env_variables()
@@ -1517,6 +1914,15 @@ def meic_loop():
         while not end_flag:
             # print("Main loop running...")
             time.sleep(1)
+
+
+
+
+        info_str = f'calling mqtt client disconnect and loop_stop'
+        print(info_str)
+        
+        mqtt_client.disconnect()
+        mqtt_client.loop_stop()
 
 
 
@@ -1611,7 +2017,9 @@ def main():
         print(f'Paper/Live Mode: {info_str}')
         print()
 
-        print("Scheduled Entry Times:")
+        check_trading_day()
+
+        print("770A Scheduled Entry Times:")
         show_times(entry_times)
 
         meic_loop()

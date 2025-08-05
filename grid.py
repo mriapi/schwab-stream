@@ -1,5 +1,7 @@
 import threading
 import queue
+import logging
+from paho.mqtt.enums import CallbackAPIVersion
 import paho.mqtt.client as mqtt
 import time
 import os
@@ -13,17 +15,26 @@ import pytz
 import calendar
 import pytz
 import market_open
+import mri_schwab_lib
 
 
-MARKET_OPEN_OFFSET = 2
+MARKET_OPEN_OFFSET = 1
 MARKET_CLOSE_OFFSET = 0
 
-DEBUG_CHAIN_SYM = "P06000"
+DEBUG_CHAIN_SYM = "P06030"
 
 quote_df_lock = threading.Lock()
 global quote_df
+quote_df_lcnt_1 = 0
+quote_df_lcnt_2 = 0
+quote_df_lcnt_3 = 0
+quote_df_lcnt_4 = 0
+quote_df_lcnt_5 = 0
+quote_df_lcnt_6 = 0
+quote_df_lcnt_7 = 0
 
-global mqtt_client
+
+
 mqtt_client = None
 
 
@@ -38,6 +49,15 @@ time_since_last_stream = 0
 
 
 market_open_flag = False
+
+
+
+logging.basicConfig(
+    filename="mri_log2.log",  # Log file name
+    level=logging.INFO,  # Set logging level
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
 
 
 
@@ -106,93 +126,205 @@ else:
 
 GRID_REQUEST_TOPIC = "schwab/spx/grid/request/#"
 GRID_RESPONSE_TOPIC = "schwab/spx/grid/response/"
+GRID_REFUSE_TOPIC = "schwab/spx/grid/resfuse/"
 CHAIN_REQUEST_TOPIC = "schwab/spx/chain/request"
 
 # Callback function when the client connects to the broker
-def on_connect(client, userdata, flags, rc):
+# def on_connect(client, userdata, flags, rc):
+def on_connect(client, userdata, flags, rc, properties):
 
-    if rc == 0:
+    try:
 
-        current_time = datetime.now()
-        time_str = current_time.strftime('%H:%M:%S')
+        if rc == 0:
 
-        print(f'At {time_str} connected to MQTT broker successfully.')
-        if mqtt_mode == MQTT_MODE_TOPICS:
-            client.subscribe(SPX_LAST_TOPIC)
-            print(f"Subscribed to topic: {SPX_LAST_TOPIC}")
-            client.subscribe(SPX_OPT_BID_ASK_LAST_TOPIC)
-            print(f"Subscribed to topic: {SPX_OPT_BID_ASK_LAST_TOPIC}")
+            current_time = datetime.now()
+            time_str = current_time.strftime('%H:%M:%S')
 
-        elif mqtt_mode == MQTT_MODE_RAW:
-            client.subscribe(SPX_SCHWAB_STREAM)
-            print(f"Subscribed to topic: {SPX_SCHWAB_STREAM}")
-            client.subscribe(SPX_SCHWAB_QUERIED)
-            print(f"Subscribed to topic: {SPX_SCHWAB_QUERIED}")
-            client.subscribe(SPX_SCHWAB_CHAIN)
-            print(f"Subscribed to topic: {SPX_SCHWAB_CHAIN}")
+            print(f'At {time_str} connected to MQTT broker successfully.')
+            if mqtt_mode == MQTT_MODE_TOPICS:
+                client.subscribe(SPX_LAST_TOPIC)
+                print(f"Subscribed to topic: {SPX_LAST_TOPIC}")
+                client.subscribe(SPX_OPT_BID_ASK_LAST_TOPIC)
+                print(f"Subscribed to topic: {SPX_OPT_BID_ASK_LAST_TOPIC}")
 
-        client.subscribe(GRID_REQUEST_TOPIC)
-        print(f"Subscribed to topic: {GRID_REQUEST_TOPIC}")
+            elif mqtt_mode == MQTT_MODE_RAW:
+                client.subscribe(SPX_SCHWAB_STREAM)
+                print(f"Subscribed to topic: {SPX_SCHWAB_STREAM}")
+                client.subscribe(SPX_SCHWAB_QUERIED)
+                print(f"Subscribed to topic: {SPX_SCHWAB_QUERIED}")
+                client.subscribe(SPX_SCHWAB_CHAIN)
+                print(f"Subscribed to topic: {SPX_SCHWAB_CHAIN}")
+
+                SCHWAB_BASE_TOPIC = "schwab/#"
+                client.subscribe(SCHWAB_BASE_TOPIC)
+                print(f"Subscribed to topic: {SCHWAB_BASE_TOPIC}")
+
+            client.subscribe(GRID_REQUEST_TOPIC)
+            print(f"Subscribed to topic: {GRID_REQUEST_TOPIC}")
 
 
 
-    else:
-        print(f"Failed to connect with error code: {rc}")
+        else:
+            print(f"Failed to connect with error code: {rc}")
+
+    except Exception as e:
+
+        current_time_local = datetime.now()  # Get the current datetime object for comparison
+        current_time_local_str = current_time_local.strftime('%H:%M:%S')
+
+        info_str = f'grid general on_connect exception: {e} at {current_time_local_str}'
+        print(info_str)
+        logging.error(info_str)
 
 
 topic_rx_cnt = 0
 throttle_rx_cnt_display = 0
+total_on_message_cnt = 0
+on_message_dbg = 0
 
 # Callback function when a message is received
 def on_message(client, userdata, msg):
-    
+    global total_on_message_cnt, on_message_dbg
+    global gbl_got_grid_request_ts_str1
 
-    topic = msg.topic
-    payload = msg.payload.decode()
+    try:
 
+        total_on_message_cnt += 1
+        
 
-    # print(f'Received topic type:{type(topic)}, topic:<{topic}>')
-    # print(f'payload type:{type(payload)},\ndata:<{payload}>')
-
-    # try:
-    #     payload_dict = json.loads(payload)
-    #     print(f"01 Received message on topic:<{topic}> payload:\n{json.dumps(payload_dict, indent=2)}")
-    # except Exception as e:
-    #     print(f"grid manager on_message() An error occurred: {e} while trying to convert payload to json")
+        topic = msg.topic
+        payload = msg.payload.decode()
 
 
-    # Put the topic and payload into the queue as a tuple
-    # print(f'calling .put')
-    message_queue.put((topic, payload))
-    # print(f'returned from .put')
+        if "heartbeat" in payload:
+            hb_msg = " (heartbeat)"
+            
+        else:
+            hb_msg = ""
+
+        if len(hb_msg) > 1:
+            print(f'grid on_message notify heartbeat received')
+
+        if "grid/request" in topic:
+            current_time = datetime.now()
+            gbl_got_grid_request_ts_str1 = current_time.strftime('%H:%M:%S.%f')[:-3]
+
+
+        if "schwab/spx/grid/request" in topic:
+        # if "schwab/spx/grid/xxxxxxx" in topic:
+
+            current_time = datetime.now()
+            time_str = current_time.strftime('%H:%M:%S.%f')[:-3]
+
+            request_id = topic.split('/')[-1]
+            quote_df_copy = quote_df.copy()
+            rows_with_nan_bid_ask = quote_df_copy[['bid', 'ask']].isna().any(axis=1).sum()
+
+            if time_since_last_quereied < 90 and time_since_last_stream < 20:
+
+                publish_grid(quote_df_copy, rows_with_nan_bid_ask, request_id)
+                print(f'published grid response, id:{request_id}, from on message at {time_str}')
+
+            else:
+                publish_refusal()
+                print(f'published grid REFUSAL, id:{request_id}, from on message at {time_str}')
+
+            return
 
 
 
 
 
-    # global topic_rx_cnt
-    # global throttle_rx_cnt_display
 
-    # topic_rx_cnt += 1
-    # throttle_rx_cnt_display += 1
-    # if throttle_rx_cnt_display % 5 == 4:
-    #     print(f'topic_rx_cnt:{topic_rx_cnt}')
+
+
+
+
+
+
+
+
+
+
+        # Put the topic and payload into the queue as a tuple
+        on_message_dbg = 10702
+        message_queue.put((topic, payload))
+        on_message_dbg = 10703
+
+    except Exception as e:
+
+        current_time_local = datetime.now()  # Get the current datetime object for comparison
+        current_time_local_str = current_time_local.strftime('%H:%M:%S')
+
+        info_str = f'grid general on_message exception: {e} at {current_time_local_str}'
+        print(info_str)
+        logging.error(info_str)
+
+        return
+
+
+
+def purge_stale_spxw_symbols_warning(quote_df, payload_dict):
+    # Extract live symbols from payload_dict
+    live_spxw_symbols = {
+        item['symbol'] for item in payload_dict.get('data', [])
+        if item.get('symbol', '').startswith('SPXW')
+    }
+
+    with quote_df_lock:
+        # Create a boolean mask of rows to keep
+        mask = quote_df['symbol'].apply(
+            lambda s: not s.startswith('SPXW') or s in live_spxw_symbols
+        )
+        quote_df[:] = quote_df[mask].reset_index(drop=True)
+
+
+def purge_stale_spxw_symbols():
+    global quote_df, payload_dict  # Access globals if used that way
+
+    # Build a set of current live SPXW symbols from incoming data
+    live_spxw_symbols = {
+        item['symbol'] for item in payload_dict.get('data', [])
+        if item.get('symbol', '').startswith('SPXW')
+    }
+
+    # Safely update quote_df in-place
+    with quote_df_lock:
+        filtered_df = quote_df[
+            quote_df['symbol'].apply(
+                lambda s: not s.startswith('SPXW') or s in live_spxw_symbols
+            )
+        ].reset_index(drop=True)
+
+        quote_df = filtered_df  # Clean reassignment to avoid dtype warnings
 
 
 
 # Takes spx chain quote and updates quote_df entries 
 def update_quotes_from_chain(payload_dict):
     global quote_df  # Assumes quote_df is declared globally elsewhere
+    global quote_df_lock
+    global quote_df_lcnt_1
+
+
+
     if "data" not in payload_dict:
         return
+    
+
+
+
 
     now_str = lambda: datetime.now().strftime('%H:%M:%S:%f')[:-3]  # hh:mm:ss:<ms> format
 
-    with quote_df_lock:
-        for item in payload_dict["data"]:
-            symbol = item.get("symbol")
-            if symbol is None:
-                continue
+    
+    for item in payload_dict["data"]:
+        symbol = item.get("symbol")
+        if symbol is None:
+            continue
+
+        quote_df_lcnt_1 = 1
+        with quote_df_lock:
 
             matching_rows = quote_df.index[quote_df["symbol"] == symbol].tolist()
             if not matching_rows:
@@ -210,14 +342,24 @@ def update_quotes_from_chain(payload_dict):
             quote_df.at[row_idx, "ask_time"] = now_str()
             quote_df.at[row_idx, "last_time"] = now_str()
 
-            if DEBUG_CHAIN_SYM in symbol:
-                print(f'from  chain, updating {symbol}, new bid:{item.get("bid")}, new ask:{item.get("ask")}')
+            # if DEBUG_CHAIN_SYM in symbol:
+            #     print(f'grid: from  chain, updating {symbol}, current bid:{item.get("bid")}, current ask:{item.get("ask")}, current last:{item.get("last")}')
 
+        quote_df_lcnt_1 = 0
+
+    # purge_stale_spxw_symbols(quote_df, payload_dict)
+
+
+    # print(f'\ngrid update quotes from chain at {now_str}, payload_dict type:{type(payload_dict)}, data:\n{payload_dict}\n')
+    # with quote_df_lock:
+    #     print(f'quote_df:\n{quote_df}\n')
 
 
 # Function to update the quote DataFrame
 def add_to_quote_tbl(topic, payload):
     global quote_df
+    global quote_df_lock
+    global quote_df_lcnt_2
 
     # Check if the topic starts with the desired prefix
     if topic.startswith("schwab/option/spx/basic"):
@@ -244,8 +386,9 @@ def add_to_quote_tbl(topic, payload):
         temp_bid = None
         temp_ask = None
         temp_sym = None
-        
 
+
+        quote_df_lcnt_2 = 1
         with quote_df_lock:    
 
             # Check if the symbol already exists in quote_df
@@ -311,11 +454,15 @@ def add_to_quote_tbl(topic, payload):
             
             temp_loaded_flag = False
 
+        quote_df_lcnt_2 = 0
+
 
 
 # Function to update the quote DataFrame
 def add_to_quote_tbl2(sym,bid,ask,last):
     global quote_df
+    global quote_df_lock
+    global quote_df_lcnt_3
 
     if bid == None and ask == None and last == None:
         print(f'{sym} has all None values')
@@ -344,7 +491,7 @@ def add_to_quote_tbl2(sym,bid,ask,last):
     # print(f'add_to_quote_tbl2 sym_stripped:{sym_stripped}, bid type{type(bid)}, bid val:{bid}')
     # print(f'bid type{type(bid)}, bid val:{bid}, ask type{type(ask)}, bid val:{ask}, last type{type(last)}, last val:{last}')
     
-
+    quote_df_lcnt_3 = 1
     with quote_df_lock:  
         # symbol = sym_stripped  
         symbol = sym
@@ -393,7 +540,11 @@ def add_to_quote_tbl2(sym,bid,ask,last):
                 warnings.simplefilter(action='ignore', category=FutureWarning)
                 # quote_df = pd.concat([quote_df, new_row], ignore_index=True)
                 if not new_row.empty:
-	                quote_df = pd.concat([quote_df.dropna(axis=1, how="all"), new_row.dropna(axis=1, how="all")], ignore_index=True)
+                    quote_df = pd.concat([quote_df.dropna(axis=1, how="all"), new_row.dropna(axis=1, how="all")], ignore_index=True)
+
+            pass
+
+    quote_df_lcnt_3 = 1
             
 
 
@@ -493,11 +644,13 @@ def process_stream(topic, payload_dict):
 
                                 else:
 
-                                    if DEBUG_CHAIN_SYM in opt_sym:
-                                        print(f'from stream, updating {opt_sym}, new bid:{opt_bid}, new ask:{opt_ask}')
 
 
 
+                                    # if DEBUG_CHAIN_SYM in opt_sym:
+                                    #     print(f'grid: from stream, updating {opt_sym}, new bid:{opt_bid}, new ask:{opt_ask}, new_last:{opt_last}')
+
+                                    # print(f'opt_sym type:{type(opt_sym)}, value:{opt_sym}')
                                     # print(f'opt_bid type:{type(opt_bid)}, value:{opt_bid}')
                                     # print(f'opt_ask type:{type(opt_ask)}, value:{opt_ask}')
 
@@ -505,10 +658,48 @@ def process_stream(topic, payload_dict):
                                     #     print(f'opt_ask is 0.05, opt_bid:{opt_bid}')
 
 
-                                    # print(f'streamed adding_to_quote_tbl2 {opt_sym}, bid:{opt_bid}, ask:{opt_ask}, last:{opt_last}')
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                    # Check if opt_sym does not exist in the 'symbol' column
+
+                                    # strike_val = mri_schwab_lib.get_strike_value_from_sym(opt_sym)
+
+                                    # if spx_last_fl != None:
+                                    #     strike_offset = abs(strike_val - spx_last_fl)
+                                    # else:
+                                    #     strike_offset = 999
+
+                                    # found_in_tbl_flag = opt_sym in quote_df["symbol"].values
+
+                                    # if found_in_tbl_flag or strike_offset <= 10:
+                                    #     # print(f'streamed adding_to_quote_tbl2 {opt_sym}, bid:{opt_bid}, ask:{opt_ask}, last:{opt_last}')
+                                    #     add_to_quote_tbl2(opt_sym, opt_bid, opt_ask, opt_last)
+
+                                    #     if not found_in_tbl_flag:
+                                    #         print(f'added near ATM {opt_sym} to table')
+
+
+                                    # else:
+                                    #     # else the streamed symbol is either not in quote_df or not not clost to ATM
+                                    #     pass
+
                                     add_to_quote_tbl2(opt_sym, opt_bid, opt_ask, opt_last)
 
-                             
+
+                                    
+
+                                
 
 def process_queried(topic, payload_dict):
     global spx_last_fl
@@ -543,8 +734,8 @@ def process_queried(topic, payload_dict):
                 opt_ask = float(value['quote']['askPrice'])
 
 
-            if DEBUG_CHAIN_SYM in opt_sym:
-                print(f'from  query, updating {opt_sym}, new bid:{opt_bid}, new ask:{opt_ask}')
+            # if DEBUG_CHAIN_SYM in opt_sym:
+            #     print(f'grid: from  query, updating {opt_sym}, new bid:{opt_bid}, new ask:{opt_ask}')
 
 
 
@@ -552,7 +743,94 @@ def process_queried(topic, payload_dict):
             add_to_quote_tbl2(opt_sym, opt_bid, opt_ask, opt_last)
 
 
+# Thread function to process messages from the queue
+def grid_supervisor():
+    global quote_df_lcnt_1, quote_df_lcnt_2, quote_df_lcnt_3, quote_df_lcnt_4
+    global quote_df_lcnt_5, quote_df_lcnt_6, quote_df_lcnt_7
 
+
+    gs_loop = 0
+    while True:
+        time.sleep(1)
+
+        if not market_open_flag:
+            quote_df_lcnt_1 = 0
+            quote_df_lcnt_2 = 0
+            quote_df_lcnt_3 = 0
+            quote_df_lcnt_4 = 0            
+            quote_df_lcnt_5 = 0
+            quote_df_lcnt_6 = 0
+            quote_df_lcnt_7 = 0
+            continue
+
+        # gs_loop += 1
+
+        # if gs_loop % 10 == 2:
+        #     print(f'grid supervisor {gs_loop}')
+
+        if quote_df_lcnt_1 > 0:
+            quote_df_lcnt_1 += 1
+            if quote_df_lcnt_1 < 1:
+                print(f'\n!!!!! long lock for quote_df_lcnt_1: {quote_df_lcnt_1}\n')
+
+        if quote_df_lcnt_2 > 0:
+            quote_df_lcnt_2 += 1
+            if quote_df_lcnt_2 < 1:
+                print(f'\n!!!!! long lock for quote_df_lcnt_2: {quote_df_lcnt_2}\n')
+
+        if quote_df_lcnt_3 > 0:
+            quote_df_lcnt_3 += 1
+            if quote_df_lcnt_3 < 1:
+                print(f'\n!!!!! long lock for quote_df_lcnt_3: {quote_df_lcnt_3}\n')
+
+        if quote_df_lcnt_4 > 0:
+            quote_df_lcnt_4 += 1
+            if quote_df_lcnt_4 < 1:
+                print(f'\n!!!!! long lock for quote_df_lcnt_4: {quote_df_lcnt_4}\n')
+
+        if quote_df_lcnt_5 > 0:
+            quote_df_lcnt_5 += 1
+            if quote_df_lcnt_5 < 1:
+                print(f'\n!!!!! long lock for quote_df_lcnt_5: {quote_df_lcnt_5}\n')
+
+        if quote_df_lcnt_6 > 0:
+            quote_df_lcnt_6 += 1
+            if quote_df_lcnt_6 < 1:
+                print(f'\n!!!!! long lock for quote_df_lcnt_6: {quote_df_lcnt_6}\n')
+
+        if quote_df_lcnt_7 > 0:
+            quote_df_lcnt_7 += 1
+            if quote_df_lcnt_7 < 1:
+                print(f'\n!!!!! long lock for quote_df_lcnt_7: {quote_df_lcnt_7}\n')
+
+
+
+
+
+
+
+pm_prev_market_open_flag = False
+def pm_is_market_open():
+    global pm_prev_market_open_flag
+    global market_open_flag
+
+    # FIX ME TODO make sure this works okay 
+    market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
+    
+    if market_open_flag != pm_prev_market_open_flag:
+        if market_open_flag:
+            print(f'grid process message has detected that market is now open')
+
+        else:
+            print(f'grid process message has detected that market is now closed')
+
+        pm_prev_market_open_flag = market_open_flag
+
+    return market_open_flag
+
+
+gbl_got_grid_request_ts_str2 = ""
+gbl_got_grid_request_ts_str1 = ""
 
 # Thread function to process messages from the queue
 def process_message():
@@ -561,12 +839,20 @@ def process_message():
     global market_open_flag
     global time_since_last_stream
     global time_since_last_quereied
+    global on_message_dbg
+    global quote_df
+    global quote_df_lock
+    global quote_df_lcnt_4
+    global gbl_got_grid_request_ts_str2
 
-    # ensure that the market is open
-    while True:
-        time.sleep(1)
-        if market_open_flag == True:
-            break
+
+    
+
+    # # ensure that the market is open
+    # while True:
+    #     time.sleep(1)
+    #     if market_open_flag == True:
+    #         break
 
 
 
@@ -578,6 +864,10 @@ def process_message():
 
 
     stream_message_cnt = 0
+
+    no_message_cnt = 0
+
+    my_open_flag = False
 
     while True:
         
@@ -591,25 +881,42 @@ def process_message():
         #     print(f'market_open_flag:{market_open_flag}')
             
 
-        
-        if market_open_flag == False:
-            print(f'grid process_message(): market is now closed')
-            return
+        # FIX ME this was not commented out
+        # if market_open_flag == False:
+        #     print(f'grid process_message(): market is now closed')
+        #     return
 
 
         # print(f'calling .get')
         
         # Get the (topic, message) tuple from the queue, but time out if no message is received
         try:
+            on_message_dbg = 12710
             topic, payload = message_queue.get(timeout=5)  # Wait for up to 5 seconds
+            on_message_dbg = 12712
         except queue.Empty:
             # print(".get: timeout.")
+            on_message_dbg = 12714
+
+            my_open_flag = pm_is_market_open()
+            no_message_cnt += 1
+            if not my_open_flag and no_message_cnt % 10 == 2:
+                current_time = datetime.now()
+                my_time_str = current_time.strftime('%H:%M:%S.%f')[:-3]
+                print(f'\ngrid pm no msg market closed at {my_time_str}')
             continue
 
+        # if "schwab/spx/grid/request" in topic:
+        if "schwab/spx/grid/xxxx" in topic:
+            current_time = datetime.now()
+            gbl_got_grid_request_ts_str2 = current_time.strftime('%H:%M:%S.%f')[:-3]
+             
+
+
         gbl_total_message_count += 1
-        # print(f'returned from .get, gbl_total_message_count:{gbl_total_message_count}')
+        # print(f'dbg grid process message returned from .get, gbl_total_message_count:{gbl_total_message_count}')
 
-
+        
 
         # payload_dict = json.loads(payload)
         # print(f"02 Received message on topic:<{topic}> payload:\n{json.dumps(payload_dict, indent=2)}")
@@ -618,19 +925,34 @@ def process_message():
         try:
             # Attempt to parse the JSON data
             payload_dict = json.loads(payload)
+            on_message_dbg = 10714
 
         except json.JSONDecodeError:
             # print("Payload is not valid JSON")
             payload_dict = {}
+            on_message_dbg = 10716
 
         except Exception as e:
             print(f"8394 An error occurred: {e} while trying load json data")
             payload_dict = {}
-  
+            on_message_dbg = 10718
+
+
+        my_open_flag = pm_is_market_open()
+        if not my_open_flag:
+            # print(f'grid process message disdarding topic <{topic}> because market is closed')
+
+            if gbl_total_message_count % 5 == 2:
+                current_time = datetime.now()
+                my_time_str = current_time.strftime('%H:%M:%S.%f')[:-3]
+                print(f'\ngrid pm msg received market closed at {my_time_str}')
+            continue
 
 
         if "schwab/stream" in topic:
+            on_message_dbg = 10720
             process_stream(topic, payload_dict)
+            on_message_dbg = 10722
             time_since_last_stream = 0
 
             stream_message_cnt += 1
@@ -641,40 +963,71 @@ def process_message():
 
 
         elif "schwab/queried" in topic:
+            on_message_dbg = 10730
             process_queried(topic, payload_dict)
+            on_message_dbg = 10732
             time_since_last_quereied = 0
 
         elif "schwab/chain" in topic:
-            print(f'\n29300 received schwab/chain')
+            # print(f'\n29300 received schwab/chain')
             # print(f'received schwab/chain, payload_dict type:{type(payload_dict)}, data:\n{payload_dict}')
+            on_message_dbg = 10740
             update_quotes_from_chain(payload_dict)
+            on_message_dbg = 10742
             pass
 
 
-        elif "schwab/spx/grid/request" in topic:
+        # elif "schwab/spx/grid/request" in topic:
+        elif "schwab/spx/grid/xxxx" in topic:
+
+            current_time = datetime.now()
+            time_str = current_time.strftime('%H:%M:%S.%f')[:-3]
+
+
+            
+            on_message_dbg = 10750
             # print(f'grid request topic type:{type(topic)}, topic:<{topic}>')
             # Parse the topic to extract the last level
             request_id = topic.split('/')[-1]
 
+            on_message_dbg = 10751
+
+            # print(f'10751 got grid request topic at {time_str} request id:{request_id}')
+
             # Print the result to confirm
             # print(f'request_id:<{request_id}>')
 
+            quote_df_lcnt_4 = 1
 
-            with quote_df_lock: 
-                quote_df_sorted = quote_df.sort_values(by='symbol')
+            # FIX ME TODO
+            # with quote_df_lock: 
+            #     quote_df_sorted = quote_df.sort_values(by='symbol')
+            quote_df_sorted = quote_df
+
+            quote_df_lcnt_4 = 0
+
+            on_message_dbg = 10752
 
     
             # Count the number of rows with NaN or None values in 'bid' or 'ask'
             rows_with_nan_bid_ask = quote_df_sorted[['bid', 'ask']].isna().any(axis=1).sum()
 
             if time_since_last_quereied < 90 and time_since_last_stream < 20:
+
+                current_time = datetime.now()
+                send_grid_response_ts_str = current_time.strftime('%H:%M:%S.%f')[:-3]
+                
                 publish_grid(quote_df_sorted, rows_with_nan_bid_ask, request_id)
+
+                print(f'grid request 1 {gbl_got_grid_request_ts_str1}, request 2:{gbl_got_grid_request_ts_str2}, response at {send_grid_response_ts_str}')
 
             else:
                 current_time = datetime.now()
                 time_str = current_time.strftime('%H:%M:%S')
                 print(f'grid refused to publish at {time_str} because too much time since last data')
                 print(f'time_since_last_quereied:{time_since_last_quereied},  time_since_last_stream:{time_since_last_stream}')
+                publish_refusal(quote_df_sorted, rows_with_nan_bid_ask, request_id)
+
 
 
             pass
@@ -687,12 +1040,19 @@ def process_message():
         # print(f'topic type:{type(topic)}, topic payload:{type(payload)}')
 
         if "stock/SPX/last" in topic:
+            on_message_dbg = 10760
+            
+
             spx_last_fl = float(payload)
             # print(f'new SPX value:{spx_last_fl}')
 
+            on_message_dbg = 10762
+
         if SPX_OPT_BID_ASK_LAST_CHECK in topic:
+            on_message_dbg = 10764
             # print(f'recieved SPX option bid/ask/last topic')
             add_to_quote_tbl(topic, payload)
+            on_message_dbg = 10766
 
 
 
@@ -719,13 +1079,19 @@ def publish_grid(quote_df_sorted, rows_with_nan_bid_ask, request_id):
 
     my_topic = GRID_RESPONSE_TOPIC + request_id
 
+
+    # now_time = datetime.now()
+    # now_time_str = now_time.strftime('%H:%M:%S.%f')[:-3]
+    # print(f'grid publishing grid response at {now_time_str}, topic:{my_topic}, request id:{request_id}')
+
     # print(f'in publish_grid, rows_with_nan_bid_ask:{rows_with_nan_bid_ask}')
     # print(f'grid manager publishing topic:<{my_topic}>')
 
     # Force publishing of an empty json list
     # rows_with_nan_bid_ask = 1
 
-    if rows_with_nan_bid_ask > 0:
+    if rows_with_nan_bid_ask > 2:
+        print(f'publishing empty json data because bid ask quantity:{rows_with_nan_bid_ask}, topic:{my_topic}')
         json_data = json.dumps([])
 
     else:
@@ -739,8 +1105,20 @@ def publish_grid(quote_df_sorted, rows_with_nan_bid_ask, request_id):
     # print(f'grid data:\n{json.dumps(parsed_json, indent=4)}')
 
 
+# Function to publish grid via MQTT
+def publish_refusal(quote_df_sorted, rows_with_nan_bid_ask, request_id):
+    global mqtt_client
 
+    my_topic = GRID_REFUSE_TOPIC + request_id
 
+    now_time = datetime.now()
+    now_time_str = now_time.strftime('%H:%M:%S.%f')[:-3]
+    print(f'grid publishing grid refusal at {now_time_str}, topic:{my_topic}, request id:{request_id}')
+
+    json_data = json.dumps([])
+
+    with mqtt_pub_lock:
+        mqtt_client.publish(my_topic, json_data)
 
 
 
@@ -748,15 +1126,20 @@ def publish_grid(quote_df_sorted, rows_with_nan_bid_ask, request_id):
 
 def grid_handling():
     global quote_df
+    global quote_df_lock
+    global quote_df_lcnt_5
+
     global time_since_last_stream
     global time_since_last_quereied
 
+    initialize_data()
 
-    # Ensure that the market is open
-    while True:
-        time.sleep(1)
-        if market_open_flag == True:
-            break
+
+    # # Ensure that the market is open
+    # while True:
+    #     time.sleep(1)
+    #     if market_open_flag == True:
+    #         break
 
 
 
@@ -769,24 +1152,44 @@ def grid_handling():
     time_since_last_stream = 0
     time_since_last_quereied = 0
 
+    gh_loop = 0
+
     while True:
         time.sleep(1)
+
+        gh_loop += 1
+
+        my_market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
+        
+        if not my_market_open_flag:
+            initialize_quote_df()
+            initialize_data()
+            time.sleep(9)
+
+            if gh_loop % 5 == 4:
+                now_time = datetime.now()
+                now_time_str = now_time.strftime('%H:%M:%S.%f')[:-3]
+                print(f'\ngrid gh market closed at {now_time_str} local')
+
+            continue
+
+
         display_quote_throttle += 1
 
         total_loop_count += 1
         time_since_last_stream += 1
         time_since_last_quereied += 1
 
-        if market_open_flag == True and (time_since_last_quereied > 5 or time_since_last_stream > 5):
+        if my_market_open_flag == True and (time_since_last_quereied > 5 or time_since_last_stream > 5):
             current_time = datetime.now()
             time_str = current_time.strftime('%H:%M:%S')
-            print(f'grid: total loop:{total_loop_count}, since stream:{time_since_last_stream}, since queried:{time_since_last_quereied} at {time_str}')
+            print(f'grid: total loop:{total_loop_count}, since stream:{time_since_last_stream}, since queried:{time_since_last_quereied}, omc:{total_on_message_cnt}, omd:{on_message_dbg} at {time_str}')
 
         else:
             pass
 
-        if market_open_flag == False:
-            print(f'grid_handling: market is now closed, exiting thread')
+        if my_market_open_flag == False:
+            print(f'grid gh market is now closed, continuing')
             return
 
         
@@ -799,6 +1202,7 @@ def grid_handling():
         
 
         pd.set_option('display.max_rows', None)
+        quote_df_lcnt_5 = 1
         with quote_df_lock: 
 
 
@@ -811,6 +1215,8 @@ def grid_handling():
             # Sort the DataFrame by the 'symbol' column
             quote_df_sorted = quote_df.sort_values(by='symbol')
 
+        quote_df_lcnt_5 = 0
+
 
 
         # Select the columns you want to print
@@ -821,6 +1227,8 @@ def grid_handling():
 
         # periodically Print the sorted DataFrame with the selected columns
         if display_quote_throttle % 10 == 8:
+
+            # print(f'dbg grid handling loop')
 
             if rows_with_nan_bid_ask > 0:
                 print(f'grid: # rows:{total_rows}, # Nan/None in bid/ask:{rows_with_nan_bid_ask}, # messages:{gbl_total_message_count} at {time_str} ')
@@ -975,6 +1383,7 @@ def wait_for_market_to_open():
         if throttle_wait_display % 6 == 1:
 
             initialize_quote_df()
+            initialize_data()
 
 
             current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
@@ -986,7 +1395,7 @@ def wait_for_market_to_open():
             # current_time = datetime.now(eastern)
             # eastern_time_str = current_time.strftime('%H:%M:%S')
 
-            print(f'grid: waiting for market to open, current East time: {current_eastern_day} {current_eastern_hhmmss}')
+            print(f'\ngrid: waiting for market to open, current East time: {current_eastern_day} {current_eastern_hhmmss}')
 
             pass
 
@@ -995,7 +1404,6 @@ def wait_for_market_to_open():
 
 
 def initialize_data():
-    global mqtt_client
     global gbl_total_message_count
     global time_since_last_quereied
     global time_since_last_stream
@@ -1005,9 +1413,9 @@ def initialize_data():
     global spx_ask_fl
     global topic_rx_cnt
     global throttle_rx_cnt_display
+    global total_on_message_cnt, on_message_dbg
 
 
-    mqtt_client = None
     gbl_total_message_count = 0
     time_since_last_quereied = 0
     time_since_last_stream = 0
@@ -1017,23 +1425,33 @@ def initialize_data():
     spx_ask_fl = None
     topic_rx_cnt = 0
     throttle_rx_cnt_display = 0
+    total_on_message_cnt = 0
+    on_message_dbg = 0
     
 
 
 def initialize_quote_df():
     global quote_df, quote_df_lock
+    global quote_df_lcnt_6
 
+    quote_df_lcnt_6 = 1
     with quote_df_lock: 
 
         # Create/empty/initialize quotes_df
         quote_df = pd.DataFrame(columns=['symbol', 'bid', 'bid_time', 'ask', 'ask_time', 'last', 'last_time'])
+    
+    quote_df_lcnt_6 = 0
 
 
 def display_quote_df():
     global quote_df, quote_df_lock
+    global quote_df_lcnt_7
 
+    quote_df_lcnt_7 = 1
     with quote_df_lock: 
         print(f'displaying quote_df:\n{quote_df}')
+
+    quote_df_lcnt_7 = 0
 
 
 def grid_loop():
@@ -1047,23 +1465,26 @@ def grid_loop():
     
     while True:
 
+        print(f'grid: start of grid loop while loop to wait for market open')
+
 
         wait_for_market_to_open()
+        # Note: globals are initialized in wait_for_market_to_open() while market is not open
 
         print(f'grid: market is open')
 
 
-        # Initialize MQTT client
-        mqtt_client = mqtt.Client()
-        # mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        # # Initialize MQTT client
+        # # mqtt_client = mqtt.Client()
+        # mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
 
-        # Assign callback functions
-        mqtt_client.on_connect = on_connect
-        mqtt_client.on_message = on_message
+        # # Assign callback functions
+        # mqtt_client.on_connect = on_connect
+        # mqtt_client.on_message = on_message
 
-        # Connect to the MQTT broker
-        print("Connecting to MQTT broker...")
-        mqtt_client.connect(BROKER_ADDRESS)
+        # # Connect to the MQTT broker
+        # print("Connecting to MQTT broker...")
+        # mqtt_client.connect(BROKER_ADDRESS)
 
         app_key, secret_key, my_tokens_file = load_env_variables()
 
@@ -1078,17 +1499,22 @@ def grid_loop():
 
 
 
-        # Start the message processing thread
-        processing_thread = threading.Thread(target=process_message, name="process_message")
-        processing_thread.daemon = True  # Daemonize thread to exit with the main program
-        processing_thread.start()
+
+
+        # # Start the message processing thread
+        # print(f'starting process message thread')
+        # processing_message_thread = threading.Thread(target=process_message, name="process_message")
+        # processing_message_thread.daemon = True  # Daemonize thread to exit with the main program
+        # processing_message_thread.start()
+
+        
 
         # Start the grid_handling thread
         # grid_handling_thread = threading.Thread(target=grid_handling, name="grid_handling")
-        grid_handling_thread = threading.Thread(target=grid_handling, name="grid_handling")
-
-        grid_handling_thread.daemon = True  # Daemonize thread to exit with the main program
-        grid_handling_thread.start()
+        # print(f'starting grid handling thread')
+        # grid_handling_thread = threading.Thread(target=grid_handling, name="grid_handling")
+        # grid_handling_thread.daemon = True  # Daemonize thread to exit with the main program
+        # grid_handling_thread.start()
 
         # Start the MQTT client loop (handles reconnects and message callbacks)
         # mqtt_client.loop_forever()
@@ -1096,39 +1522,59 @@ def grid_loop():
         # loop while market is open
         mkt_loop_cnt = 0
         while True:
-            mqtt_client.loop(timeout=10.0)  # process network traffic, with a 1-second timeout
-            # time.sleep(10) 
+            # mqtt_client.loop(timeout=10.0)  # process network traffic, with a 1-second timeout
+            time.sleep(10) 
 
             mkt_loop_cnt += 1
+
             # if mkt_loop_cnt % 3 == 2:
             #     display_quote_df()
 
             market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
             # market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=-599, close_offset=-844)
 
-            if market_open_flag == False:
+            if market_open_flag == False: 
                 break
 
-        print(f'grid_loop: market is now closed, shutting down')
-
-
-        mqtt_client.disconnect()
-        mqtt_client.loop_stop()
-
-
-
-        print(f'grid: waiting for processing_thread to finish')
-        processing_thread.join()
-        print(f'grid:processing_thread has finished')
-
-        print(f'grid: waiting for grid_handling_thread to finish')
-        grid_handling_thread.join()
-        print(f'grid:grid_handling_thread has finished')
-
-        print(f'grid: restarting main loop')
+        
+        
+        print(f'grid loop: market is now closed, shutting down')
 
 
 
+        # print(f'grid: waiting for processing_thread to finish')
+        # processing_message_thread.join()
+        # print(f'grid:processing_thread has finished')
+
+        # print(f'grid: waiting for grid_handling_thread to finish')
+        # grid_handling_thread.join()
+        # print(f'grid:grid_handling_thread has finished')
+
+        # print(f'grid: worker thread(s) have (all) joined')
+
+
+
+def mqtt_services():
+    global mqtt_client
+
+    # print(f"[DEBUG] 1 mqtt_client type: {type(mqtt_client)}")
+
+
+    mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
+
+    # print(f"[DEBUG] 2 mqtt_client type: {type(mqtt_client)}")
+
+    # Assign callback functions
+    mqtt_client.on_connect = on_connect
+    mqtt_client.on_message = on_message
+
+    # Connect to the MQTT broker
+    print("Connecting to MQTT broker...")
+    mqtt_client.connect(BROKER_ADDRESS)
+
+    time.sleep(2)
+
+    mqtt_client.loop_forever()
 
 
 
@@ -1140,21 +1586,50 @@ def main():
     global time_since_last_quereied 
     global time_since_last_stream
 
+    initialize_quote_df()
+    initialize_data()
+
+    sup_thread = threading.Thread(target=grid_supervisor, name="grid_supervisor")
+    sup_thread.daemon = True  # Daemonize thread to exit with the main program
+    sup_thread.start()
+
+    # Start MQTT service thread, which will always run 
+    mqtt_thread = threading.Thread(target=mqtt_services, daemon=True)
+    mqtt_thread.start()
+
+    # Start the message processing thread
+    print(f'starting process message thread')
+    processing_message_thread = threading.Thread(target=process_message, name="process_message")
+    processing_message_thread.daemon = True  # Daemonize thread to exit with the main program
+    processing_message_thread.start()
+
+    print(f'starting grid handling thread')
+    grid_handling_thread = threading.Thread(target=grid_handling, name="grid_handling")
+    grid_handling_thread.daemon = True  # Daemonize thread to exit with the main program
+    grid_handling_thread.start()
+
+
+
+
 
     while True:
 
-        initialize_quote_df()
-        initialize_data()
+        time.sleep(1)
+        continue
+
+        # initialize_quote_df()
+        # initialize_data()
 
 
-        wait_for_market_to_open()
+        # wait_for_market_to_open()
+        # print(f'grid: market is open')
 
-        print(f'grid: market is open')
+        # time_since_last_quereied = 0
+        # time_since_last_stream = 0
 
-        time_since_last_quereied = 0
-        time_since_last_stream = 0
-
-        grid_loop()
+        # grid_loop()
+        # # grid_loop does not return
+        # print(f'grid returned from grid loop')
 
 
         # # Initialize MQTT client

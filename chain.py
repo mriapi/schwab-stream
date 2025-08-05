@@ -1,5 +1,6 @@
 import threading
 import queue
+from paho.mqtt.enums import CallbackAPIVersion
 import paho.mqtt.client as mqtt
 import time
 import os
@@ -22,12 +23,22 @@ import positions
 
 
 MARKET_OPEN_OFFSET = 3
+# MARKET_OPEN_OFFSET = 21
 
 quote_df_lock = threading.Lock()
 
 end_flag = False
 global time_since_last_mqtt_stream
 time_since_last_mqtt_stream = 0
+
+dbg_track = 0
+pm_track = 0
+om_track = 0
+time_since_om = 0
+time_since_pm = 0
+
+mql_track = 0
+mql_loop_timer = 0
 
 
 
@@ -75,6 +86,7 @@ if mqtt_mode == MQTT_MODE_TOPICS:
     SPX_OPT_BID_ASK_LAST_CHECK = "schwab/option/spx/basic/"
     SPX_SCHWAB_STREAM = ""
     SPX_SCHWAB_QUERIED = ""
+    SPX_SCHWAB_CHAIN = ""
 
 elif mqtt_mode == MQTT_MODE_RAW:
     SPX_LAST_TOPIC = ""
@@ -82,6 +94,7 @@ elif mqtt_mode == MQTT_MODE_RAW:
     SPX_OPT_BID_ASK_LAST_CHECK = ""
     SPX_SCHWAB_STREAM = "schwab/stream"
     SPX_SCHWAB_QUERIED = "schwab/queried"
+    SPX_SCHWAB_CHAIN = "schwab/chain"
 
 else:
     SPX_LAST_TOPIC = ""
@@ -89,9 +102,14 @@ else:
     SPX_OPT_BID_ASK_LAST_CHECK = ""
     SPX_SCHWAB_STREAM = ""
     SPX_SCHWAB_QUERIED = ""   
+    SPX_SCHWAB_CHAIN = ""
+
+SCHWAB_NOTIFY_TOPIC_SUBSCRIPTION = "schwab/notify/#"
+SCHWAB_NOTIFY_TOPIC_FILTER = "schwab/notify"
 
 # Callback function when the client connects to the broker
-def on_connect(client, userdata, flags, rc):
+# def on_connect(client, userdata, flags, rc):
+def on_connect(client, userdata, flags, rc, properties):
 
     if rc == 0:
         if mqtt_mode == MQTT_MODE_TOPICS:
@@ -106,6 +124,16 @@ def on_connect(client, userdata, flags, rc):
             print(f"Subscribed to mqtt topic: {SPX_SCHWAB_STREAM}")
             client.subscribe(SPX_SCHWAB_QUERIED)
             print(f"Subscribed to mqtt topic: {SPX_SCHWAB_QUERIED}")
+            client.subscribe(SPX_SCHWAB_CHAIN)
+            print(f"Subscribed to mqtt topic: {SPX_SCHWAB_CHAIN}")
+
+            
+            client.subscribe(SCHWAB_NOTIFY_TOPIC_SUBSCRIPTION)
+            print(f"Subscribed to mqtt topic: {SCHWAB_NOTIFY_TOPIC_SUBSCRIPTION}")
+
+
+
+
 
 
     else:
@@ -113,23 +141,46 @@ def on_connect(client, userdata, flags, rc):
 
 # Callback function when a message is received
 def on_message(client, userdata, msg):
+    global om_track
+    global time_since_om
+
+
+    om_track = 21000
+    time_since_om = 0
 
 
     topic = msg.topic
     payload = msg.payload.decode()
 
-    # print(f"Received topic type:{type(topic)}, payload type:{type(payload)}")
+    if "heartbeat" in payload:
+        print(f'chain on_message notify heartbeat received')
+        return
+
+
+
+
+    om_track = 210010
+
+    # print(f"chain Received topic type:{type(topic)}, payload type:{type(payload)}")
+    # print(f"chain Received topic type:{type(topic)}, data:{topic}")
+
+    
+
     payload_dict = json.loads(payload)
     # print(f"01 Received message on topic:<{topic}> payload:\n{json.dumps(payload_dict, indent=2)}")
 
+    om_track = 21020
+
     # Put the topic and payload into the queue as a tuple
     message_queue.put((topic, payload))
+
+    om_track = 21030
 
 
 
 # Function to update the quote DataFrame
 def add_to_quote_tbl(topic, payload):
-    global quote_df
+    global quote_df, quote_df_lock
 
     # Check if the topic starts with the desired prefix
     if topic.startswith("schwab/option/spx/basic"):
@@ -227,7 +278,7 @@ def add_to_quote_tbl(topic, payload):
 
 # Function to update the quote DataFrame
 def add_to_quote_tbl2(sym,bid,ask,last):
-    global quote_df
+    global quote_df, quote_df_lock
 
     if bid == None and ask == None and last == None:
         print(f'{sym} has all None values')
@@ -440,33 +491,101 @@ def process_queried(topic, payload_dict):
 
 
 
+
+
+
+# Takes spx chain quote and updates quote_df entries 
+def update_quotes_from_chain(payload_dict):
+    global quote_df, quote_df_lock
+
+    DEBUG_CHAIN_SYM = "P06030"
+
+    if "data" not in payload_dict:
+        return
+
+    now_str = lambda: datetime.now().strftime('%H:%M:%S:%f')[:-3]  # hh:mm:ss:<ms> format
+
+    
+    for item in payload_dict["data"]:
+        symbol = item.get("symbol")
+        if symbol is None:
+            continue
+
+        with quote_df_lock:
+
+            matching_rows = quote_df.index[quote_df["symbol"] == symbol].tolist()
+            if not matching_rows:
+                continue
+
+            row_idx = matching_rows[0]
+
+            
+
+            quote_df.at[row_idx, "bid"] = item.get("bid")
+            quote_df.at[row_idx, "ask"] = item.get("ask")
+            quote_df.at[row_idx, "last"] = item.get("last")
+
+            quote_df.at[row_idx, "bid_time"] = now_str()
+            quote_df.at[row_idx, "ask_time"] = now_str()
+            quote_df.at[row_idx, "last_time"] = now_str()
+
+            # if DEBUG_CHAIN_SYM and DEBUG_CHAIN_SYM in symbol:
+            #     print(f'chain: from  chain, updating {symbol}, current bid:{item.get("bid")}, current ask:{item.get("ask")}, current last:{item.get("last")}')
+
+
+
+
+
+
 # Thread function to process messages from the queue
 def process_message():
     global spx_last_fl
     global end_flag
     global time_since_last_mqtt_stream
+    global pm_track
+    global time_since_pm
 
     while True:
+        pm_track = 11000
         if end_flag == True:
-            print(f'chain process_message() end_flag True, returning')
+            print(f'4920 chain process_message() end_flag True, returning')
             return
+        
+        
 
         try:
+            pm_track = 11010
             topic, payload = message_queue.get(timeout=1)  # 1 second timeout
+            time_since_pm = 0
+            pm_track = 11020
 
         except queue.Empty: 
+            time_since_pm = 0
+            pm_track = 11030
             continue
+
+        pm_track = 11040
 
 
         payload_dict = json.loads(payload)
+        pm_track = 11050
         # print(f"02 Received message on topic:<{topic}> payload:\n{json.dumps(payload_dict, indent=2)}")
 
         if "schwab/stream" in topic:
+            pm_track = 11060
             process_stream(topic, payload_dict)
             time_since_last_mqtt_stream = 0
+            
 
         if "schwab/queried" in topic:
+            pm_track = 11070
             process_queried(topic, payload_dict)
+            
+
+        if "schwab/chain" in topic:
+            pm_track = 11080
+            update_quotes_from_chain(payload_dict)
+            
 
 
 
@@ -478,16 +597,19 @@ def process_message():
         # print(f'topic type:{type(topic)}, topic payload:{type(payload)}')
 
         if "stock/SPX/last" in topic:
+            pm_track = 11100
             spx_last_fl = float(payload)
             # print(f'new SPX value:{spx_last_fl}')
 
         if SPX_OPT_BID_ASK_LAST_CHECK in topic:
+            pm_track = 11110
             # print(f'recieved SPX option bid/ask/last topic')
             add_to_quote_tbl(topic, payload)
 
-
+        pm_track = 11120
 
         time.sleep(0.1)
+
 
 def get_chain_desination_dir():
     base_dir = r"C:\MEIC\chain"
@@ -820,6 +942,43 @@ def display_syms(short_opt, long_opt):
     persist_string(disp_str)
 
 
+def display_ic_syms(short_call_opt, long_call_opt, short_put_opt, long_put_opt):
+
+    # print(f'in display_syms, short_opt type{type(short_opt)}, data:\n{short_opt}')
+    # print(f'in display_syms, long_opt type{type(long_opt)}, data:\n{long_opt}')
+
+    short_call_sym = ""
+    long_call_sym = ""
+    short_put_sym = ""
+    long_put_sym = ""
+
+    
+    # Format the output according to the provided structure
+    try:
+
+
+        # Save symbols into string variables
+        short_call_sym = short_call_opt[0]['symbol']
+        long_call_sym = long_call_opt[0]['symbol']
+        short_put_sym = short_put_opt[0]['symbol']
+        long_put_sym = long_put_opt[0]['symbol']
+        output = f'  {short_call_sym}/{long_call_sym}\n  {short_put_sym}/{long_put_sym}'
+
+ 
+    except KeyError as e:
+        print(f"Missing key: {e}. Ensure all required keys are present in the short and long option lists.")
+        return
+    except Exception as e:
+        print(f"1225 An error occurred: {e} while trying to get symbols for short/long options")
+        return
+    
+
+    disp_str = f'Symbols:\n{output}'
+    print(disp_str)
+    persist_string(disp_str)
+
+
+
          
 def segregrate_opt_grid(opt_grid):
     try:
@@ -870,25 +1029,33 @@ def segregrate_opt_grid(opt_grid):
      
 
 def meic_entry():
-    global quote_df
+    global quote_df, quote_df_lock
     global end_flag
     global time_since_last_mqtt_stream
 
     display_quote_throttle = 0
+    seconds_to_next_minute = market_open.seconds_until_even_minute() + 3
+    print(f'0200 seconds to next minute (+ 3):   {seconds_to_next_minute:.3f}')
+
+    
+
 
     while True:
+        # print(f'chain meic entry while')
         time.sleep(1)
+        seconds_to_next_minute -= 1
 
         time_since_last_mqtt_stream += 1
 
         if end_flag == True:
-            print(f'meic meic_entry() end_flag True, returning')
+            print(f'4940 chain meic_entry() end_flag True, returning')
             return
 
 
 
 
         display_quote_throttle += 1
+
 
         # print(f'display_quote_throttle:{display_quote_throttle}')
         # print('meic_entry loop')
@@ -960,16 +1127,26 @@ def meic_entry():
             # print(f'\n\n*************** quote in 2 seconds ******************\n\n')
             pass
 
-        if display_quote_throttle % quote_interval_modulo == quote_interval_remainder:
+
+
+        # if display_quote_throttle % quote_interval_modulo == quote_interval_remainder:
+        if seconds_to_next_minute < 1:
+
+            now_time = datetime.now()
+            now_datetime_str = now_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
+            
 
             # but only if we have a minimum number of rows
             # and very few rows with None/Nan value for bid and ask
 
             # Total number of rows
             total_rows = len(quote_df)
+            
 
             # Count the number of rows with NaN or None values in 'bid' or 'ask'
             rows_with_nan_bid_ask = quote_df[['bid', 'ask']].isna().any(axis=1).sum()
+
+            print(f'time for next chain recommendation at {now_datetime_str}, rows:{total_rows}, with nan bid ask:{rows_with_nan_bid_ask}')
 
 
             ROW_NEEDED = 50
@@ -994,9 +1171,9 @@ def meic_entry():
                 os.makedirs(directory, exist_ok=True)
                 
 
-                # Save the JSON data to the file with indentation for readability
-                with open(file_path, "w") as file:
-                    json.dump(quote_json, file, indent=4)  # Indent for human-readable formatting
+                # # Save the JSON data to the file with indentation for readability
+                # with open(file_path, "w") as file:
+                #     json.dump(quote_json, file, indent=4)  # Indent for human-readable formatting
 
 
 
@@ -1039,9 +1216,17 @@ def meic_entry():
 
 
 
-                # Save the JSON data to the file with indentation for readability
-                with open(file_path, "w") as file:
-                    json.dump(quote_json, file, indent=4)  # Indent for human-readable formatting(quote_json)
+
+                # change quote_json from a list to a dict
+                quote_json = {"spx_chain": quote_json}
+
+
+                # print(f'ready to write spx/opt chain data to file <{file_path}>, quote_dict_json type:{type(quote_json)}')
+
+
+                # # Save the JSON data to the file with indentation for readability
+                # with open(file_path, "w") as file:
+                #     json.dump(quote_json, file, indent=4)  # Indent for human-readable formatting(quote_json)
 
 
                 #convert quote_df_sorted to a dictionary 
@@ -1086,10 +1271,72 @@ def meic_entry():
                     print(f'\nchain: get positions failed')
 
                 else:
-                    info_str = f'short positions: {gbl_short_positions}'
+
+                    if not gbl_short_positions:
+                        info_str = f'No existing short positions'
+                    else:
+                        info_str = f'short positions: {gbl_short_positions}'
+
+                    persist_string(info_str)
                     print(info_str)
-                    info_str = f'long positions: {gbl_long_positions}'
+
+                    if not gbl_long_positions:
+                        info_str = f'No existing long positions'
+                    else:
+                        info_str = f'long positions: {gbl_long_positions}'
+
+                    persist_string(info_str)
                     print(info_str)
+
+
+                    # print(f'ready to append short/long postions to file <{file_path}>')
+
+                    # with open(file_path, 'a') as f:
+                    #     f.write('\n')  # Ensure each entry is on a new line
+
+                    # short_json = {"short_positions": gbl_short_positions}
+                    # with open(file_path, 'a') as f:
+                    #     json.dump(short_json, f)
+                    #     f.write('\n')  # Ensure each entry is on a new line
+
+                    # long_json =  {"long_positions": gbl_long_positions}
+                    # with open(file_path, 'a') as f:
+                    #     json.dump(long_json, f)
+                    #     f.write('\n')  # Ensure each entry is on a new line
+
+
+
+
+
+                    # info_str = f'short positions: {gbl_short_positions}'
+                    # print(info_str)
+                    # info_str = f'long positions: {gbl_long_positions}'
+                    # print(info_str)
+
+
+                print(f'ready to write chain, short, and long data to file <{file_path}>')
+
+
+                short_json = {"short_positions": gbl_short_positions}
+                long_json =  {"long_positions": gbl_long_positions}
+
+                
+                
+                quote_json = [
+                    quote_json,
+                    short_json,
+                    long_json
+                ]
+
+                # Save the JSON chain, short positions, and long positions to the file with indentation for readability
+                with open(file_path, "w") as file:
+                    json.dump(quote_json, file, indent=4)  # Indent for human-readable formatting(quote_json)
+
+                
+
+
+                seconds_to_next_minute = market_open.seconds_until_even_minute() + 3
+                # print(f'0202 seconds to next minute (+ 3):   {seconds_to_next_minute:.3f}')
 
 
 
@@ -1113,7 +1360,8 @@ def meic_entry():
                 pl_len = len(put_long)
 
                 if cs_len == 0 or cl_len == 0 or ps_len == 0 or pl_len == 0:
-                    info_string = f'at least one of the spread options could not be recommended'
+
+                    info_string = f'at least one of the spread options could not be recommended, atm_straddle:{atm_straddle}'
                     print(info_string)
                     persist_string(info_string)
 
@@ -1143,18 +1391,46 @@ def meic_entry():
 
                     # print()
                     # persist_string(f'\n{file_path}:')
-                    persist_string(f'Spread recommendations at {current_hhmmss}')
+                    info_string = f'chain spread recommendations at {current_hhmmss}'
+                    print(info_string)
+                    persist_string(info_string)
+
+                    # info_string = ""
+                    # print(info_string)
+                    # persist_string(info_string)
+
+                    display_ic_syms(call_short, call_long, put_short, put_long)
+
+                    info_string = ""
+                    print(info_string)
+                    persist_string(info_string)
 
 
                     info_string = f'SPX:{spx_price_picker:.2f}, ATM straddle:{atm_straddle:.2f}, credit target:{target_credit:.2f}'
                     print(info_string)
                     persist_string(info_string)
 
+                    info_string = ""
+                    print(info_string)
+                    persist_string(info_string)
+
+
                     display_spread("Call", call_spread)
                     display_spread(" Put", put_spread)
 
-                    display_syms(call_short, call_long)
-                    display_syms(put_short, put_long)
+                    info_str = f'FIX ME -- display full IC credit, Call type{type(call_spread)}, data:\n{call_spread}\n'
+                    print(info_string)
+                    persist_string(info_string)
+
+                    # display_syms(call_short, call_long)
+                    # display_syms(put_short, put_long)
+
+                    
+                    # info_string = ""
+                    # print(info_string)
+                    # persist_string(info_string)
+
+                    # display_ic_syms(call_short, call_long, put_short, put_long)
 
                     print()
 
@@ -1180,6 +1456,8 @@ def meic_entry():
             else:
                 print(f'waiting for enough rows ({ROW_NEEDED}), current:{total_rows}')
                 print(f'and/or fewer than {MAX_NAN} None/Nan in bid/ask, current {rows_with_nan_bid_ask}')
+
+
 
 
 def is_market_open():
@@ -1245,6 +1523,7 @@ def wait_for_market_to_open():
         # print(f'throttle_wait_display: {throttle_wait_display}')
         if throttle_wait_display % 3 == 2:
             initialize_quote_df()
+            initialize_globals()
             
             current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
             current_eastern_day = current_eastern_time.strftime('%A')
@@ -1255,7 +1534,9 @@ def wait_for_market_to_open():
             # current_time = datetime.now(eastern)
             # eastern_time_str = current_time.strftime('%H:%M:%S')
 
-            print(f'chain: in wait_for_market_to_open, current Eastern time: {current_eastern_day} {current_eastern_hhmmss}')
+            print(f'\nchain: in wait_for_market_to_open, current Eastern time: {current_eastern_day} {current_eastern_hhmmss}')
+
+
             
             days_to_refresh = market_open.refresh_expiration_days()
 
@@ -1279,15 +1560,51 @@ def initialize_quote_df():
         quote_df = pd.DataFrame(columns=['symbol', 'bid', 'bid_time', 'ask', 'ask_time', 'last', 'last_time'])
 
 
+IS_OPEN_OPEN_OFFSET = 2
+
+def supervisor():
+    global time_since_om
+    global time_since_pm
+    global mql_loop_timer
+
+    print(f'started sup')
+
+    sup_loop_cnt = 0
+
+    while True:
+        time.sleep(1)
+
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=1, close_offset=0)
+        if not market_open_flag:
+            sup_loop_cnt = 0
+            time_since_om = 0
+            time_since_pm = 0
+            continue
+
+
+
+        sup_loop_cnt += 1
+        time_since_om += 1
+        time_since_pm += 1
+        # mql_loop_timer += 1
+
+        # if time_since_om > 4 or time_since_pm > 4 or mql_loop_timer > 12:
+        if time_since_om > 4 or time_since_pm > 4:
+            print(f'chain sup1 {sup_loop_cnt} time since om:{time_since_om}, om:{om_track}, time_since_pm:{time_since_pm} pm:{pm_track}')
+            # print(f'chain sup2 mql_loop_timer:{mql_loop_timer}, mql_track:{mql_track}')
+
+
+        
 
 
 def chain_loop():
 
     global end_flag
+    global mql_track, mql_loop_timer
 
+    mql_track = 0
+    mql_loop_timer = 0
 
-
-    
     
 
     try:
@@ -1320,16 +1637,17 @@ def chain_loop():
         print(f'chain: market is open')
 
 
-        # Initialize MQTT client
-        mqtt_client = mqtt.Client()
+        # # Initialize MQTT client
+        # # mqtt_client = mqtt.Client()
+        # mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
 
-        # Assign callback functions
-        mqtt_client.on_connect = on_connect
-        mqtt_client.on_message = on_message
+        # # Assign callback functions
+        # mqtt_client.on_connect = on_connect
+        # mqtt_client.on_message = on_message
 
-        # Connect to the MQTT broker
-        print("Connecting to MQTT broker...")
-        mqtt_client.connect(BROKER_ADDRESS)
+        # # Connect to the MQTT broker
+        # print("Connecting to MQTT broker...")
+        # mqtt_client.connect(BROKER_ADDRESS)
 
         app_key, secret_key, my_tokens_file = load_env_variables()
 
@@ -1356,26 +1674,48 @@ def chain_loop():
         meic_entry_thread.daemon = True  # Daemonize thread to exit with the main program
         meic_entry_thread.start()
 
+
+        supervisor_thread = threading.Thread(target=supervisor, name="supervisor")
+        supervisor_thread.daemon = True  # Daemonize thread to exit with the main program
+        supervisor_thread.start()
+
         # Start the MQTT client loop (handles reconnects and message callbacks)
         # mqtt_client.loop_forever()
 
         # mqtt_client.loop_forever()
 
+        mql_track = 30010
+        mql_loop_timer = 0
+
+        # mqtt_client.loop_forever()
+
         while True:
-                mqtt_client.loop(timeout=1.0)  # process network traffic, with a 1-second timeout
+                mql_track = 30020
+
+                time.sleep(1)
+                
+                # mqtt_client.loop(timeout=1.0)  # process network traffic, with a 1-second timeout
+
+                mql_loop_timer = 0
+
+                mql_track = 30030
                 # time.sleep(1) 
                 market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
 
+                mql_track = 30030
 
                 if market_open_flag == False:
                     end_flag = True
                     current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
                     print(f'meic: Market is now closed at {current_eastern_hhmmss}, shutting down MQTT')
-                    mqtt_client.loop_stop()  # Stop the MQTT loop
-                    mqtt_client.disconnect()  # Disconnect from the MQTT broker
+                    # mqtt_client.loop_stop()  # Stop the MQTT loop
+                    # mqtt_client.disconnect()  # Disconnect from the MQTT broker
+
+                    mql_track = 30040
                     break
 
                 if end_flag == True:
+                    mql_track = 30050
                     break
 
 
@@ -1394,13 +1734,57 @@ def chain_loop():
         print(f"Error in chain_loop(): {e}")
         end_flag = True
         return
+    
+
+def initialize_globals():
+    global end_flag
+    global time_since_last_mqtt_stream
+    global spx_last_fl
+    global spx_bid_fl
+    global spx_ask_fl
+
+
+
+    end_flag = False
+    time_since_last_mqtt_stream = 0
+    spx_last_fl = None
+    spx_bid_fl = None
+    spx_ask_fl = None
+
+    pass
+
+
+
+def mqtt_services():
+    global end_flag
+    global mqtt_client
+
+
+    # Initialize MQTT client
+    # mqtt_client = mqtt.Client()
+    mqtt_client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
+
+    # Assign callback functions
+    mqtt_client.on_connect = on_connect
+    mqtt_client.on_message = on_message
+
+    # Connect to the MQTT broker
+    print("Connecting to MQTT broker...")
+    mqtt_client.connect(BROKER_ADDRESS)
+
+    mqtt_client.loop_forever()
+
 
 
 
 # Main function to set up MQTT client and start the processing thread
 def main():
 
+    mqtt_thread = threading.Thread(target=mqtt_services, daemon=True)
+    mqtt_thread.start()
+
     initialize_quote_df()
+    initialize_globals()
 
     test_destination = get_chain_desination_dir()
 
@@ -1422,6 +1806,7 @@ def main():
     persist_string(info_string)
 
     while True:
+        initialize_globals()
         wait_for_market_to_open()
         chain_loop()
 
