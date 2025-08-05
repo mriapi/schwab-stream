@@ -26,7 +26,7 @@ ts_quote_pub = 0
 
 
 
-MARKET_OPEN_OFFSET = 1
+MARKET_OPEN_OFFSET = 0
 
 
 global websocket
@@ -277,7 +277,7 @@ def mqtt_services():
 
 
     mqtt_client_uuid = f"mqtt_client_streamer-{uuid.uuid4()}"
-    print(f'client_id_test type{type(mqtt_client_uuid)}, value:{mqtt_client_uuid}')
+    # print(f'client_id_test type{type(mqtt_client_uuid)}, value:{mqtt_client_uuid}')
 
 
     client = mqtt.Client(client_id=mqtt_client_uuid)
@@ -424,14 +424,24 @@ def publish_quote(topic, payload):
 
 
 
-def publish_grid_quotes(data):
+def publish_grid_quotes(chain_quotes):
 
     # pretty_json = json.dumps(data, indent=2)
 
-    json_str = json.dumps(data)
-    # print(f'in publish_grid_quotes, json_str type:{type(json_str)}, data:\n{json_str}')
+    chunk_size = 10
 
     topic = "schwab/chain"
+
+    # for i in range(0, len(chain_quotes["data"]), chunk_size):
+    #     chain_chunk = {"data": chain_quotes["data"][i:i+chunk_size]}
+    #     json_str = json.dumps(chain_chunk)
+    #     # print(f'\n\nin publish_grid_quotes chunk json_str type:{type(json_str)}, data:\n{json_str}\n\n')
+    #     publish_quote(topic, json_str)
+    #     time.sleep(0.15)
+
+
+    json_str = json.dumps(chain_quotes)
+    # print(f'in publish_grid_quotes, json_str type:{type(json_str)}, data:\n{json_str}')
     publish_quote(topic, json_str)
 
     pass
@@ -532,6 +542,7 @@ def get_opt_quote(sym):
 
     except Exception as e:
         get_quote_fail_count += 1
+        success_flag = False
 
         error_message = str(e)
 
@@ -541,22 +552,23 @@ def get_opt_quote(sym):
             logging.error(info_str)
 
         else:
-            info_str = f'3101A exception requesting quotes :{e} at {current_time_str}, returning'
+            info_str = f'3101A exception requesting quote for {sym} :{e} at {current_time_str}, returning'
             logging.error(info_str)
             print(info_str)
+            
 
-            try:
-                code = response.status_code
+            # try:
+            #     code = response.status_code
 
-                info_str = f'3301B failure quote failure code:{code}'
-                logging.error(info_str)
-                print(info_str)
+            #     info_str = f'3301B failure quote failure code:{code}'
+            #     logging.error(info_str)
+            #     print(info_str)
 
 
-            except Exception as e:
-                info_str = f'3101C failure getting response code afer get exception :{e}'
-                logging.error(info_str)
-                print(info_str)
+            # except Exception as e:
+            #     info_str = f'3101C failure getting response code afer get exception :{e}'
+            #     logging.error(info_str)
+            #     print(info_str)
 
         return success_flag
     
@@ -796,6 +808,14 @@ def parse_spx_chain(spx_chain):
 
     # print(f'in parse_spx_chain')
 
+    temp_day_high_distance = abs(spx_close - spx_high)
+    temp_day_low_distance = abs(spx_close - spx_low)
+    temp_current_max_distance = max(temp_day_high_distance, temp_day_low_distance)
+
+    info_str = f'3950 spx_high:{spx_high:.2f}, spx_low:{spx_low:.2f}, current spx:{spx_close:.2f}, current max distance:{temp_current_max_distance:.2f}'
+    print(info_str)
+    logging.info(info_str)
+
     if not isinstance(spx_chain, dict):
         print("Invalid spx_chain format")
         return
@@ -875,7 +895,7 @@ def polling_services():
 
             if ps_wait_market_open_cnt  % 60 == 59:
                 current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
-                print(f'streamer: polling services: waiting for market to open, current easten time:{current_eastern_hhmmss}')
+                print(f'\nstreamer: polling services: waiting for market to open, current easten time:{current_eastern_hhmmss}')
             time.sleep(1)
             market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
             continue
@@ -1077,7 +1097,7 @@ def polling_services():
 
                 chain_request_flag = False
 
-                print(f'2630 trying to get ohlc')
+                # print(f'2630 trying to get ohlc')
                 # print(f'streamer: polling services bc 520')
 
                 try:
@@ -1093,6 +1113,11 @@ def polling_services():
 
                     if spx_high == None or spx_low == None or returned_ohlc == None:
                         print(f'poller does not have all high/low. spx_high:{spx_high:.2f}, spx_low:{spx_low:.2f}')
+
+                    else:
+                        info_str = f'3940 spx_high:{spx_high:.2f}, spx_low:{spx_low:.2f}'
+                        print(info_str)
+                        logging.info(info_str)
 
                     
                     try:
@@ -1111,7 +1136,7 @@ def polling_services():
                             # print(f'streamer: polling services bc 600 calling parse spx chain')
 
                             # publish spx_chain via mqtt
-                            print(f'spx_chain type:{type(spx_chain)}.  Should be json')
+                            # print(f'spx_chain type:{type(spx_chain)}.  Should be json')
 
                             bc_ps = 41058
                             parse_spx_chain(spx_chain)
@@ -1215,12 +1240,14 @@ def stream_supervisor():
         if market_open_flag:
 
             if ts_stream_pub > 3 or ts_quote_pub > 3 or (ss_cnt % 60 == 7):
+
+                current_time_str = datetime.now().strftime('%H:%M:%S')
                 
-                print(f'streamer supervisor dh {ss_cnt}, st_pub:{ts_stream_pub}, qu_pub:{ts_quote_pub}, bc_ss:{bc_ss}, bc_ps:{bc_ps}, bc_mq:{bc_mq}, bc_mn:{bc_mn}')
+                print(f'streamer supervisor at {current_time_str} dh {ss_cnt}, st_pub:{ts_stream_pub}, qu_pub:{ts_quote_pub}, bc_ss:{bc_ss}, bc_ps:{bc_ps}, bc_mq:{bc_mq}, bc_mn:{bc_mn}')
 
         else:
             if ss_cnt % 60 == 8:
-                print(f'streamer supervisor ah {ss_cnt}, st_pub:{ts_stream_pub}, qu_pub:{ts_quote_pub}, bc_ss:{bc_ss}, bc_ps:{bc_ps}, bc_mq:{bc_mq}, bc_mn:{bc_mn}')
+                print(f'\nstreamer supervisor ah {ss_cnt}, st_pub:{ts_stream_pub}, qu_pub:{ts_quote_pub}, bc_ss:{bc_ss}, bc_ps:{bc_ps}, bc_mq:{bc_mq}, bc_mn:{bc_mn}')
 
 
 
@@ -1882,8 +1909,9 @@ async def receive_messages(duration=60, caller=0):
 
 
                     if not await aio_is_valid_response(response):
-                        logging.warning("1040 Received invalid message format")
-                        print("0930 Received invalid message format")
+                        info_str = "1940 Received invalid message format"
+                        logging.warning(info_str)
+                        print(info_str)
                         invalid_message_count += 1
 
                         # if invalid_message_count >= max_invalid_messages:
@@ -2385,8 +2413,8 @@ async def subscribe_to_options():
 
         
 
-    time_str = await aio_get_current_time_str()
-    print(f'17912 doing option subscriptions at {time_str}, Local Time')
+    # time_str = await aio_get_current_time_str()
+    # print(f'17912 doing option subscriptions at {time_str}, Local Time')
 
     call_list_copy = await aio_get_call_strike_list()
     put_list_copy = await aio_get_put_strike_list()
@@ -2564,7 +2592,7 @@ async def streamer_during_hours():
 
             while(1):
 
-                print(f'dh during hours processing')
+                # print(f'dh during hours processing')
                 market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=MARKET_OPEN_OFFSET, close_offset=0)
                 
                 if market_open_flag == False:

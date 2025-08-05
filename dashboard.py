@@ -399,6 +399,8 @@ def show_orders(my_orders):
         entered_time = order.get('enteredTime', 'N/A')
         entered_time_local = convert_to_local_time(entered_time, pacific_time_zone)
 
+        # print(f'\n209402 order type:{type(order)}, data:\n{order}\n')
+
         if isinstance(entered_time_local, str):
             entered_time_local_string = entered_time_local
 
@@ -526,7 +528,9 @@ def show_transactions(transactions):
 
         if 'transferItems' in transaction:
             for item in transaction['transferItems']:
+
                 instrument = item.get('instrument', {})
+                instrument_id = instrument.get('instrumentId', 'N/A')
                 asset_type = instrument.get('assetType', 'N/A')
                 status = instrument.get('status', 'N/A')
                 symbol = instrument.get('symbol', 'N/A')
@@ -537,6 +541,10 @@ def show_transactions(transactions):
                 fee_type = item.get('feeType', 'N/A')
 
                 info_str = f"    Instrument Asset Type: {asset_type}"
+                print(info_str)
+                post_dash_data(info_str)
+
+                info_str = f"    Instrument ID: {instrument_id}"
                 print(info_str)
                 post_dash_data(info_str)
 
