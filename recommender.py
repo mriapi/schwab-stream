@@ -1108,51 +1108,92 @@ def find_best_credit_spread(credit_target, option_list, short_position_list, lon
     #     # print(f'\n06 starting last range: +/- {(last_range*100):.2f}%')
 
 
+
+
+
+
+
+
+    # if credit_target <= 1.2:
+    #     last_range = 0.90
+
+    # elif credit_target <= 1.4:
+    #     last_range = 0.65
+
+    # elif credit_target <= 1.6:
+    #     last_range = 0.45
+
+    # elif credit_target <= 1.8:
+    #     last_range = 0.35
+        
+    # elif credit_target <= 2.2:
+    #     last_range = 0.30
+        
+    # elif credit_target <= 2.6:
+    #     last_range = 0.25
+        
+    # else:
+    #     last_range = 0.20
+
+
+
+
+
+
+
+
+
+
+    # if credit_target <= 1.2:
+    #     last_range = 0.90
+
+    # elif credit_target <= 1.4:
+    #     last_range = 0.55
+
+    # elif credit_target <= 1.6:
+    #     last_range = 0.35
+
+    # elif credit_target <= 1.8:
+    #     last_range = 0.30
+        
+    # elif credit_target <= 2.2:
+    #     last_range = 0.25
+        
+    # elif credit_target <= 2.6:
+    #     last_range = 0.20
+        
+    # else:
+    #     last_range = 0.15
+
+
+
+
+
+
+
+
+
+
     if credit_target <= 1.2:
-        last_range = 0.90
-
-    elif credit_target <= 1.4:
-        last_range = 0.65
-
-    elif credit_target <= 1.6:
         last_range = 0.45
 
-    elif credit_target <= 1.8:
-        last_range = 0.35
-        
-    elif credit_target <= 2.2:
-        last_range = 0.30
-        
-    elif credit_target <= 2.6:
-        last_range = 0.25
-        
-    else:
-        last_range = 0.20
-
-
-
-    if credit_target <= 1.2:
-        last_range = 0.90
-
     elif credit_target <= 1.4:
-        last_range = 0.55
+        last_range = 0.35
 
     elif credit_target <= 1.6:
-        last_range = 0.35
+        last_range = 0.30
 
     elif credit_target <= 1.8:
-        last_range = 0.30
+        last_range = 0.25
         
     elif credit_target <= 2.2:
-        last_range = 0.25
+        last_range = 0.20
         
     elif credit_target <= 2.6:
         last_range = 0.20
         
     else:
-        last_range = 0.15
-
-
+        last_range = 0.20
 
 
 
@@ -1746,7 +1787,7 @@ def generate_recommendation(short_position_list, long_position_list, grid):
 
 
 
-        print(f'Target credit:{net_credit_target:.2f} for ATM straddle:{atm_straddle_value:.2f}  SPX:{spx_last_fl:.2f}')
+        # print(f'Target credit:{net_credit_target:.2f} for ATM straddle:{atm_straddle_value:.2f}  SPX:{spx_last_fl:.2f}')
 
         best_call_pair = find_best_credit_spread(net_credit_target, call_list,  short_position_list, long_position_list, atm_straddle_value, spx_last_fl, "CALL")
         if best_call_pair:
