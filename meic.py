@@ -50,12 +50,14 @@ import signal
 # #                9:43     9:58    10:28    10:58    11:13    11:28
 # entry_times = ["12:43", "12:58", "13:28", "13:58", "14:13", "14:28"]
 
+# #              07:02    07:44    08:45    09:58    10:13   CLT TRIP DAY
+# meic_times = ["09:56", "10:44", "12:04", "12:58", "13:14"]
 
-# #               09:28    09:58    10:28    10:58    11:28
-# meic_times = ["12:28", "12:58", "13:46", "13:58", "14:28"]
 
-#              07:02    07:44    08:45    09:58    10:13   CLT TRIP DAY
-meic_times = ["09:56", "10:44", "12:04", "12:58", "13:14"]
+#              09:28    09:58    10:28    10:58    11:28
+meic_times = ["12:28", "12:58", "13:28", "13:58", "14:28"]
+
+
 
 
 live_trading_flag = True
@@ -827,7 +829,7 @@ def process_message():
             request_id = topic.split('/')[-1]
 
             # print(f'\n<><><><><><><><><><><><><><><><><><><><><><><><><><><>')
-            print(f'meic got grid request response at {now_time_ms_str}, received request id:{request_id}, prev req id:{prev_grid_request_id} ')
+            # print(f'meic got grid request response at {now_time_ms_str}, received request id:{request_id}, prev req id:{prev_grid_request_id} ')
 
             if "meic" in request_id:
                 if request_id != prev_grid_request_id:
@@ -865,7 +867,7 @@ def process_message():
             if not gbl_long_positions:
                 info_str = f'No existing long positions'
             else:
-                info_str = f'existing long positions: {gbl_long_positions}\n'
+                info_str = f'existing long positions: {gbl_long_positions}'
 
             print(info_str)
             persist_string(info_str)
@@ -1224,7 +1226,10 @@ def process_message():
 
                 else:
                     print(f'{current_time_str} ({current_time_local_str} Pacific) is not a new entry time')
+                    
                     pass
+
+                print(f'current processed times:{processed_times}')
 
 
                 pass
@@ -1477,13 +1482,15 @@ def meic_entry():
                 return
             market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
             gbl_market_open_flag = market_open_flag
+
             
             time.sleep(5)
             market_open_wait_cnt += 1
             if market_open_wait_cnt % 12 == 11:
                 current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
 
-                print(f'\nmeic: market not open, easten time:{current_eastern_hhmmss}')
+                print(f'\nmeic: market not open, easten time:{current_eastern_hhmmss}, initializing globals')
+                initialize_globals()
 
                 # show_times_raw(entry_times)
 
@@ -1808,6 +1815,11 @@ def keyboard_monitor():
                     end_flag = True
                     print("\n'q' detected. Setting end_flag to True.")
 
+                else:
+                    print(f'\nkeypress:{key}\n')
+
+                    
+
         except Exception as e:
             print(f"\nUnexpected error: {e}. Setting end_flag to True.")
             end_flag = True
@@ -1852,8 +1864,52 @@ def keyboard_handler_task():
     """ Polling loop for keyboard monitoring in a separate thread """
     global end_flag
 
+
+    no_key_count = 0
+    input_str = ""
+
+
     while not end_flag:
-        time.sleep(1)  # Reduce CPU usage
+        time.sleep(0.2)  # Reduce CPU usage
+
+        no_key_count += 1
+
+
+        try:
+            # Check if a key has been pressed
+            if msvcrt.kbhit():
+                key = msvcrt.getch().decode("utf-8").strip().lower()
+                
+
+                input_str = input_str + key
+
+                # print(f'key type:{type(key)},  key:<{key}>, str:<{input_str}>')
+
+                no_key_count = 0
+
+                if input_str == "meicnow":
+                    print(f' meicnow detected')
+
+                if key == "":
+                    # print(f' Null key, current input str:<{input_str}>')
+                    input_str = ""
+
+
+
+
+        except Exception as e:
+            print(f"Error in keyboard handler task: {e}")
+
+        if no_key_count >= 20:
+            no_key_count = 21
+            input_str = ""
+
+
+
+
+
+
+
 
 
 
