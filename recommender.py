@@ -17,6 +17,10 @@ from io import StringIO
 import recommend_config
 import json
 import math
+import importlib
+
+
+importlib.reload(recommend_config)
 
 
 # fetch the spread leg selection rules from the recommend_config.py file
@@ -37,8 +41,8 @@ max_long_ask = recommend_config.MAX_LONG_ASK
 max_short_target = recommend_config.MAX_SHORT_TARGET
 min_short_target = recommend_config.MIN_SHORT_TARGET
 
-EM_MAX = recommend_config.EM_MAX
-EM_MIN = recommend_config.EM_MIN
+em_max = recommend_config.EM_MAX
+em_min = recommend_config.EM_MIN
 
 # print(f'grid_directory type:{type(grid_directory)}, value: <{grid_directory}>')
 # print(f'max_spread_width type:{type(max_spread_width)}, value: {max_spread_width}')
@@ -232,20 +236,25 @@ def display_lists(opt_short, opt_long):
 
 def calc_short_target(current_EM):
     global max_short_target, min_short_target
+
+    importlib.reload(recommend_config)
+    max_short_target = recommend_config.MAX_SHORT_TARGET
+    min_short_target = recommend_config.MIN_SHORT_TARGET
+
     
-    # Set the variables EM_MAX and EM_MIN
-    # Note: the lower the EM_MAX, the higher the target price will 
-    # EM_MAX = 27.00
-    # EM_MIN = 7.00
+    # Set the variables em_max and em_min
+    # Note: the lower the em_max, the higher the target price will 
+    # em_max = 27.00
+    # em_min = 7.00
     
     # Determine the value of adjusted_target
-    if current_EM <= EM_MIN:
+    if current_EM <= em_min:
         adjusted_target = min_short_target
-    elif current_EM >= EM_MAX:
+    elif current_EM >= em_max:
         adjusted_target = max_short_target
     else:
         # Linearly interpolate between min_short_target and max_short_target
-        proportion = (current_EM - EM_MIN) / (EM_MAX - EM_MIN)
+        proportion = (current_EM - em_min) / (em_max - em_min)
         adjusted_target = min_short_target + proportion * (max_short_target - min_short_target)
     
     # Round adjusted_target to the nearest 0.05
@@ -1066,6 +1075,19 @@ RANGE_PERCENT = 0.10
 
 
 def find_best_credit_spread(credit_target, option_list, short_position_list, long_position_list, atm_straddle, spx_last_fl, opt_type):
+
+    global config_max_net_credit, config_min_net_credit
+    global max_short_target, min_short_target
+    global em_max, em_min
+
+    importlib.reload(recommend_config)
+    config_max_net_credit = recommend_config.MAX_NET_CREDIT   # max net credit
+    config_min_net_credit = recommend_config.MIN_NET_CREDIT   # min net credit
+    max_short_target = recommend_config.MAX_SHORT_TARGET
+    min_short_target = recommend_config.MIN_SHORT_TARGET
+    em_max = recommend_config.EM_MAX
+    em_min = recommend_config.EM_MIN
+
     
 
     # print(f'fbcs opt_type type:{type(opt_type)}, value:{opt_type}')
@@ -1174,6 +1196,31 @@ def find_best_credit_spread(credit_target, option_list, short_position_list, lon
 
 
 
+    # if credit_target <= 1.2:
+    #     last_range = 0.45
+
+    # elif credit_target <= 1.4:
+    #     last_range = 0.35
+
+    # elif credit_target <= 1.6:
+    #     last_range = 0.30
+
+    # elif credit_target <= 1.8:
+    #     last_range = 0.25
+        
+    # elif credit_target <= 2.2:
+    #     last_range = 0.20
+        
+    # elif credit_target <= 2.6:
+    #     last_range = 0.20
+        
+    # else:
+    #     last_range = 0.20
+
+
+        
+
+
     if credit_target <= 1.2:
         last_range = 0.45
 
@@ -1184,16 +1231,18 @@ def find_best_credit_spread(credit_target, option_list, short_position_list, lon
         last_range = 0.30
 
     elif credit_target <= 1.8:
-        last_range = 0.25
+        last_range = 0.30
         
     elif credit_target <= 2.2:
-        last_range = 0.20
+        last_range = 0.30
         
     elif credit_target <= 2.6:
-        last_range = 0.20
+        last_range = 0.30
         
     else:
-        last_range = 0.20
+        last_range = 0.30
+
+
 
 
 
@@ -1209,10 +1258,12 @@ def find_best_credit_spread(credit_target, option_list, short_position_list, lon
 
     started_last_range = last_range
 
-    print(f'\nstarting +/- range: {(last_range*100):.2f}%')
 
+    if opt_type == "CALL":
+        print(f'\nstarting +/- range: {(last_range*100):.2f}%')
+        print(f'700010 config_max_net_credit:{config_max_net_credit:.2f}, config_min_net_credit:{config_min_net_credit:.2f}')
+        print(f'700020 max_short_target:{max_short_target:.2f}, min_short_target:{min_short_target:.2f}, em_max:{em_max}, em_min:{em_min}')
 
-    
 
 
     best_short_list = []
@@ -1263,9 +1314,10 @@ def find_best_credit_spread(credit_target, option_list, short_position_list, lon
 
 
 # def find_best_credit_spread_range(credit_target, range, option_list, short_position_list, long_position_list, atm_straddle, spx_last_fl, opt_type):
-#     global max_long_ask  
+#     global max_long_ask 
+       
 
-    
+# importlib.reload(recommend_config)    
 #     best_pair = None
 #     closest_diff = float('inf')  # closest net credit difference
 #     lowest_ask = float('inf')  # lowest "ask" value for the long option
@@ -1406,9 +1458,13 @@ def find_best_credit_spread(credit_target, option_list, short_position_list, lon
 def find_best_credit_spread_range(credit_target, range, option_list, short_position_list, long_position_list, atm_straddle, spx_last_fl, opt_type):
     global max_long_ask
 
+    importlib.reload(recommend_config)
+
 
     config_max_net_credit = recommend_config.MAX_NET_CREDIT   # max net credit
     config_min_net_credit = recommend_config.MIN_NET_CREDIT   # min net credit
+
+    # print(f'config_max_net_credit:{config_max_net_credit}, config_min_net_credit:{config_min_net_credit}')
 
     highest_allowed_nc = credit_target * (1 + range) 
     if highest_allowed_nc > config_max_net_credit:
@@ -1638,7 +1694,9 @@ def find_best_credit_spread_range(credit_target, range, option_list, short_posit
 
 
 
-
+# ask_time
+# last_time
+# bid_time
 
 def generate_recommendation(short_position_list, long_position_list, grid):
 
