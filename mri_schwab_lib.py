@@ -289,6 +289,143 @@ def get_account_details():
     return account_details
 
 
+REQUESTS_GET_TIMEOUT = 10
+
+def get_opt_quote_last(sym):
+
+    get_tokens()
+
+    sym_last = None
+    
+
+    success_flag = False
+
+    rx_accessToken = access_token
+
+    if rx_accessToken == None:
+        print(f'unable to get opt quote, rx_accessToken is None')
+        return sym_last
+
+    # quotes_response_json = None
+    current_time = datetime.now()
+    current_time_str = current_time.strftime('%H:%M:%S')
+
+    # current_tokens_mod_date = get_modification_date(tokens_file_path)
+    # if current_tokens_mod_date != tokens_file_mod_date:
+    #     print(f'641-1 tokens file has been modified at {current_time_str}')
+    #     print(f'641-2 old access token:{rx_accessToken}')
+    #     get_file_tokens()
+    #     print(f'641-3 new access token:{accessToken}')
+
+    opt_list_str = sym
+        
+
+    # with stike_list_lock:
+    #     opt_list_str = ", ".join(syms)
+
+
+    # Define the API endpoint
+    url = "https://api.schwabapi.com/marketdata/v1/quotes"
+
+    # Define query parameters
+    params = {
+        "symbols": opt_list_str,
+        "fields": "quote",
+        "indicative": "false"
+    }
+
+    # Define headers
+    headers = {
+        "accept": "application/json",
+        "Authorization": f"Bearer {rx_accessToken}"
+    }
+    
+    # with get_opt_quote_lock:
+
+    # print(f'get_opt_quote\n  url:{url}\n  params:{params}\n  headers:{headers}')
+
+    try:
+
+        # Make the GET request
+        response = requests.get(url, params=params, headers=headers, timeout=REQUESTS_GET_TIMEOUT)
+
+    except Exception as e:
+        # get_quote_fail_count += 1
+        success_flag = False
+
+        error_message = str(e)
+
+        if "Failed to resolve 'api.schwabapi.com'" in error_message:
+            info_str = f"3100 Detected network error. Failed to resolve 'api.schwabapi.com'. returning"
+            print(info_str)
+            # logging.error(info_str)
+
+        else:
+            info_str = f'3101A exception requesting quote for {sym} :{e} at {current_time_str}, returning'
+            # logging.error(info_str)
+            print(info_str)
+            
+
+            # try:
+            #     code = response.status_code
+
+            #     info_str = f'3301B failure quote failure code:{code}'
+            #     logging.error(info_str)
+            #     print(info_str)
+
+
+            # except Exception as e:
+            #     info_str = f'3101C failure getting response code afer get exception :{e}'
+            #     logging.error(info_str)
+            #     print(info_str)
+
+        return sym_last
+    
+    
+    try:
+
+        if response.status_code != 200:
+            info_str = f'1460 get_opt_quotes request failed:{response.status_code} at {current_time_str}, returning'
+            print(info_str)
+            # logging.error(info_str)
+            return sym_last
+        
+
+        
+    except Exception as e:
+        # get_quote_fail_count += 1
+        info_str = f'1470 exception requesting quotes :{e} at {current_time_str}, returning'
+        print(info_str)
+        # logging.error(info_str)
+        return sym_last
+
+    try:
+
+        quote_response_json = response.json()
+        # print(f'single quote quote_response_json json type:{type(quote_response_json)}:\n{quote_response_json}') 
+        pretty_json = json.dumps(quote_response_json, indent=2)
+        print(f'single quote requests.get pretty_json type:{type(pretty_json)}:\n{pretty_json}') 
+
+        # # Extract lastPrice from the nested JSON
+        sym_last = float(quote_response_json[sym]["quote"]["lastPrice"])
+
+        # # Display with 2 decimal places
+        # print(f"SPX last price: {spx_last:.2f}")
+
+    except Exception as e:
+        # get_quote_fail_count += 1
+        info_str = f'734 exception requesting quotes :{e} at {current_time_str}, returning' 
+        print(info_str)
+        # logging.error(info_str)
+        return sym_last
+
+
+    return sym_last
+
+
+
+
+
 def get_strike_value_from_sym(sym):
     strike_val = None
     # Extract strike price (characters 15 to 18)

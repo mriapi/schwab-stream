@@ -7,7 +7,11 @@ import mri_schwab_lib
 
 
 
-LONG_LEG_STOP_FACTOR = 1.25
+# LONG_LEG_STOP_FACTOR = 1.25
+LONG_LEG_STOP_FACTOR = 1.5
+
+# STOP_LOSS_FACTOR = 0.80
+STOP_LOSS_FACTOR = 0.75
 
 
 
@@ -523,9 +527,11 @@ def generate_order_STO_IC_with_triggers(
 ):
     # Calculate the price and stopPrice
     call_price = (call_short_bid - call_long_ask)
+    call_net_credit = call_short_bid - call_long_ask
     call_original_price = call_price
 
     put_price = (put_short_bid - put_long_ask)
+    put_net_credit = (put_short_bid - put_long_ask)
     put_original_price = put_price
 
 
@@ -539,10 +545,27 @@ def generate_order_STO_IC_with_triggers(
     # ic_price += 30
 
 
+
+
+
     #calculate call spread stop price
-    call_stop_price = call_original_price * 2 + (call_long_ask * LONG_LEG_STOP_FACTOR) - 0.10
+    # call_stop_price = ((call_original_price * 2) + (call_long_ask * LONG_LEG_STOP_FACTOR)) - 0.10
+    call_stop_price = ((call_net_credit * 2) + (call_long_ask * LONG_LEG_STOP_FACTOR)) * STOP_LOSS_FACTOR
+
+    cnc = call_net_credit
+    cnc2x = (cnc) * 2
+    print(f'call short:{call_short_bid}, call long:{call_long_ask}, cnc:{cnc} *2:{cnc2x}')
+    clo = call_long_ask * LONG_LEG_STOP_FACTOR
+    print(f'clo:{clo}, long factor:{LONG_LEG_STOP_FACTOR}')
+    cs100 = (cnc2x + clo) * 1.00
+    print(f'cs100:{cs100:.2f}')
+    cs_factored = (cnc2x + clo) * STOP_LOSS_FACTOR
+    print(f'cs_factored:{cs_factored:.2f}, factor:{STOP_LOSS_FACTOR}')
+    print(f'')
+
 
     # Apply conditional stop_price rounding based on SPX order increment rules
+    # if the price is >= 3 it must be in 0.10 increments.  Otherwise it can be in 0.05 increments
     if call_stop_price >= 3.00:
         call_stop_price = round(call_stop_price * 10) / 10  # Round to nearest 0.10
     else:
@@ -550,9 +573,26 @@ def generate_order_STO_IC_with_triggers(
 
 
     #calculate put spread stop price
-    put_stop_price = put_original_price * 2 + (put_long_ask * LONG_LEG_STOP_FACTOR) - 0.10
+    # put_stop_price = ((put_original_price * 2) + (put_long_ask * LONG_LEG_STOP_FACTOR)) - 0.10
+    # put_stop_price = ((put_original_price * 2) + (put_long_ask * LONG_LEG_STOP_FACTOR)) * 0.80
+    put_stop_price = ((put_net_credit * 2) + (put_long_ask * LONG_LEG_STOP_FACTOR)) * STOP_LOSS_FACTOR
+
+    pnc = put_net_credit
+    pnc2x = (pnc) *2
+    print(f'put short:{put_short_bid}, put long:{put_long_ask}, pnc:{pnc} *2:{pnc2x}')
+    plo = put_long_ask * LONG_LEG_STOP_FACTOR
+    print(f'plo:{plo}, long factor:{LONG_LEG_STOP_FACTOR}')
+    ps100 = (pnc2x + plo) * 1.00
+    print(f'ps100:{ps100:.2f}')
+    ps_factored = (pnc2x + plo) * STOP_LOSS_FACTOR
+    print(f'ps_factored:{ps_factored:.2f}, factor:{STOP_LOSS_FACTOR}')
+    print(f'')
+
+
+
 
     # Apply conditional stop_price rounding based on SPX order increment rules
+    # if the price is >= 3 it must be in 0.10 increments.  Otherwise it can be in 0.05 increments
     if put_stop_price >= 3.00:
         put_stop_price = round(put_stop_price * 10) / 10  # Round to nearest 0.10
     else:

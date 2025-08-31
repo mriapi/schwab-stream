@@ -4,12 +4,17 @@
 *.env
 *.log
 
+# json package file
+*.json
+
 # CSV files recursively
 **/*.csv
 
 # test programs
 test*.*
 util*.*
+
+node_modules/
 
 
 __pycache__/

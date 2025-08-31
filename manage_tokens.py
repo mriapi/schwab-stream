@@ -1185,7 +1185,11 @@ def manage_tokens_task():
             # my_time_str = my_time.strftime('%H:%M:%S') 
             # print(f'\n\n3044 calling get_tokens at {my_time_str}')
 
+            # print(f'mt 100010')
+
             get_tokens()
+
+            # print(f'mt 100020')
 
         except Exception as e:
             my_time = datetime.now()
@@ -1200,12 +1204,17 @@ def manage_tokens_task():
             continue
 
 
+        # print(f'mt 100030')
+
+
         market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=0, close_offset=0)
 
         seconds_to_next_minute += 40
 
         # time.sleep(60)
         time.sleep(seconds_to_next_minute)
+
+        # print(f'mt 100040')
 
 def main():
     global arg_one

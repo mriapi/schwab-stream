@@ -7,63 +7,37 @@ import time
 import os
 import sys
 from dotenv import load_dotenv
-# import schwabdev
 import pandas as pd
 from datetime import datetime, timezone, timedelta
 import pytz
 from tzlocal import get_localzone  # To get the local timezone
-import warnings
 import json
-# import spread_picker_B
 import recommender
 from tabulate import tabulate
 import calendar
-# import random
 import market_open
 import order
 import math
 import positions
 import msvcrt  # Windows-specific keyboard handling
 import signal
-# import streamer
+import requests
+import meic_config
+import importlib
 
 
 
-
-# Define the list of entry times in EASTERN TIME
-
-# #               12:15
-# entry_times = ["11:14"]
-
-# # FOMC 
-# #               11:13    11:28    11:43
-# entry_times = ["14:15", "14:28", "14:43"]
+importlib.reload(meic_config)
 
 
-# #               10:43    10:58    11:43
-# entry_times = ["13:43", "13:58", "14:43"]
-
-
-# #                9:58    10:28    10:58    11:28
-# entry_times = ["12:58", "13:28", "13:58", "14:28"]
-
-# #                9:43     9:58    10:28    10:58    11:13    11:28
-# entry_times = ["12:43", "12:58", "13:28", "13:58", "14:13", "14:28"]
-
-# #              07:02    07:44    08:45    09:58    10:13   CLT TRIP DAY
-# meic_times = ["09:56", "10:44", "12:04", "12:58", "13:14"]
-
-
-#              09:28    09:58    10:28    10:58    11:28
-meic_times = ["12:28", "12:58", "13:28", "13:58", "14:28"]
-
-
-
+#              09:28    09:58    10:28    10:58    11:28    11:58
+meic_times = ["12:28", "12:58", "13:28", "13:58", "14:28", "14:58"]
+meic_times = meic_config.config_meic_times
 
 live_trading_flag = True
+live_trading_flag = meic_config.config_live_trading_flag
 
 
-trade_dates = ["8/4/25", "8/5/25", "8/6/25", "8/7/25", "8/7/25"]
 no_trade_dates = [
     # "08/04/25",
     "08/20/25",
@@ -83,10 +57,24 @@ no_trade_dates = [
     "12/31/25"
 ]
 
+no_trade_dates = meic_config.config_no_trade_dates
 
 
-entry_times = None
 
+
+def update_meic_config():
+    global meic_times, live_trading_flag, no_trade_dates, entry_times
+
+    importlib.reload(meic_config)
+    meic_times = meic_config.config_meic_times
+    live_trading_flag = meic_config.config_live_trading_flag
+    no_trade_dates = meic_config.config_no_trade_dates
+
+    entry_times = None
+    entry_times = [datetime.strptime(t, "%H:%M").time() for t in meic_times]
+
+
+update_meic_config()
 
 
 
@@ -108,6 +96,10 @@ global gbl_market_open_flag
 gbl_market_open_flag = False
 
 trade_today_flag = False
+
+
+spx_chain = None
+chain_quotes = None
 
 
 
@@ -318,6 +310,8 @@ def initialize_globals():
     
     requested_grid_time = None
     requested_grid_flag = False
+
+    update_meic_config()
 
 
     # Define the Eastern Time zone
@@ -759,6 +753,8 @@ def process_message():
 
     global requested_grid_time, requested_grid_flag
 
+    global spx_chain, chain_quotes
+
     print(f'process message thread checking for market open')
     market_open_flag = False
     while not market_open_flag:
@@ -823,6 +819,23 @@ def process_message():
                 continue
 
 
+            payload_stripped = [
+                {k: v for k, v in item.items() if k not in ('bid_time', 'ask_time', 'last_time')}
+                for item in payload_dict
+            ]
+
+            if (spx_chain is not None) and (chain_quotes is not None):
+
+                print(f'\ngot spx_chain and chain_quotes')
+                # print(f'2 spx_chain type:{type(spx_chain)}, data:\n{spx_chain}')
+                # print(f'2 chain_quotes type:{type(chain_quotes)}, data:\n{chain_quotes}')
+                # print(f'mqtt payload_stripped type:{type(payload_stripped)}, data:\n{payload_stripped}')
+                pass
+                
+
+
+
+
             end_time = datetime.now()
             now_time_ms_str = end_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
             
@@ -875,6 +888,7 @@ def process_message():
 
 
             # print(f'grid responose payload_dict type{type(payload_dict)}, data:\n{payload_dict}')
+
             
             (call_short,
                 call_long,
@@ -882,8 +896,11 @@ def process_message():
                 put_long,
                 spx_price,
                 atm_straddle,
-                target_credit) = recommender.generate_recommendation(gbl_short_positions, gbl_long_positions,payload_dict)
-            
+                # target_credit) = recommender.generate_recommendation(gbl_short_positions, gbl_long_positions,payload_dict)
+                # target_credit) = recommender.generate_recommendation(gbl_short_positions, gbl_long_positions,payload_stripped)
+                target_credit) = recommender.generate_recommendation(gbl_short_positions, gbl_long_positions,chain_quotes)
+
+            spx_chain = chain_quotes = None
 
             # ensue that we have all four recommendations
             cs_len = len(call_short)
@@ -892,11 +909,25 @@ def process_message():
             pl_len = len(put_long)
 
 
+
+
             # if we are missing one or more of the four recommendations
             if cs_len == 0 or cl_len == 0 or ps_len == 0 or pl_len == 0:
+
+
                 info_str = f'MEIC: at least one of the spread options could not be recommended'
                 persist_string(info_str)
                 print(info_str)
+
+
+                if target_credit is not None:
+                    credit_display = f"{target_credit:.2f}" 
+                else:
+                    credit_display = "N/A"
+
+                atm_string = f"SPX:{spx_price:.2f}, ATM straddle:{atm_straddle:.2f}, credit target:{credit_display}"
+                print(atm_string)
+                persist_string(atm_string)
 
                 if cs_len == 0:
                     info_str = f'call short was not selected'
@@ -1187,7 +1218,7 @@ def process_message():
                                     try:
                                         print(f'\n89002 ic order form type:{type(ic_order_form)}, data:{ic_order_form}')
                                         print(f'\n89004 ic order id type:{type(ic_order_id)}, data:{ic_order_id}')
-                                        print(f'\n89006 ic order details type:{type(ic_order_details)}, data:{ic_order_details}')
+                                        # print(f'\n89006 ic order details type:{type(ic_order_details)}, data:{ic_order_details}')
 
                                     except Exception as e:
                                         print(f'\n89089 exception trying to display live order data, e:{e}')
@@ -1273,30 +1304,56 @@ def process_message():
             # display_spread(" Put", put_spread)
 
 
-            if 'net' in call_spread or 'net' in put_spread:
-                display_str = f'\nSymbols:'
-                persist_string(display_str)
-                print(display_str)
 
 
-            if 'net' in call_spread:
-                call_short_sym, call_long_sym = get_syms(call_short, call_long)
-                call_syms = f'{call_short_sym}/{call_long_sym}'
-                call_syms_display = "Call " + call_syms
-                persist_string(call_syms_display)
-                print(call_syms_display)
-
-            if 'net' in put_spread:
-                put_short_sym, put_long_sym = get_syms(put_short, put_long)
-                put_syms = f'{put_short_sym}/{put_long_sym}'
-                put_syms_display = " Put " + put_syms
-                persist_string(put_syms_display)
-                print(put_syms_display)
 
 
-            info_string = ""
-            print(info_string)
-            persist_string(info_string)
+
+
+
+
+
+
+
+
+
+
+
+            # if 'net' in call_spread or 'net' in put_spread:
+            #     display_str = f'\nSymbols:'
+            #     persist_string(display_str)
+            #     print(display_str)
+
+
+            # if 'net' in call_spread:
+            #     call_short_sym, call_long_sym = get_syms(call_short, call_long)
+            #     call_syms = f'{call_short_sym}/{call_long_sym}'
+            #     call_syms_display = "Call " + call_syms
+            #     persist_string(call_syms_display)
+            #     print(call_syms_display)
+
+            # if 'net' in put_spread:
+            #     put_short_sym, put_long_sym = get_syms(put_short, put_long)
+            #     put_syms = f'{put_short_sym}/{put_long_sym}'
+            #     put_syms_display = " Put " + put_syms
+            #     persist_string(put_syms_display)
+            #     print(put_syms_display)
+
+
+            # info_string = ""
+            # print(info_string)
+            # persist_string(info_string)
+
+
+
+
+
+
+
+
+
+
+
 
 
             atm_string = f'SPX:{spx_price:.2f}, ATM straddle:{atm_straddle:.2f}, credit target:{target_credit:.2f}'
@@ -1407,6 +1464,11 @@ def normalize_date(date_str):
             continue
     raise ValueError(f"Unrecognized date format: {date_str}")
 
+def is_weekend():
+    today = datetime.today().weekday()
+    return today in [5, 6]  # 5 = Saturday, 6 = Sunday
+
+
 
 def check_trading_day():
     global trade_today_flag
@@ -1423,14 +1485,16 @@ def check_trading_day():
 
     today_str = datetime.today().strftime("%#m/%#d/%y")
 
+    is_weekend_day = is_weekend()
+
     # if today is a 'no-trade' day
-    if is_no_trade_day:
+    if is_no_trade_day or is_weekend_day:
         trade_today_flag = False
-        print(f'today, {today_str}, is NOT a trading day,  trade_today_flag:{trade_today_flag}')
+        print(f'today, {today_str}, is either a weekend day or a blackout date,  trade_today_flag:{trade_today_flag}')
 
     else:
         trade_today_flag = True
-        print(f'today, {today_str}, IS a trading day,  trade_today_flag:{trade_today_flag}')
+        print(f'today, {today_str}, is a trading day,  trade_today_flag:{trade_today_flag}')
 
 
 
@@ -1457,6 +1521,177 @@ def check_trading_day():
 
 
 
+REQUESTS_GET_TIMEOUT = 10
+FIXED_CHAIN_STRIKE_CNT = 55
+
+
+def get_spx_option_chain():
+    # global chain_strike_cnt
+    global rx_accessToken
+    # global chain_data_lock
+
+    # with chain_data_lock:
+    #     local_strike_cnt = chain_strike_cnt
+    #     local_accessToken = rx_accessToken
+
+    local_accessToken = rx_accessToken
+    local_strike_cnt = FIXED_CHAIN_STRIKE_CNT
+
+    if local_strike_cnt is None or local_accessToken is None:
+
+        print(f'could not get option chain, chain_strike_cnt:{local_strike_cnt}, rx_accessToken:{local_accessToken}')
+        return None
+
+    try:
+        today = datetime.now()
+        myFromDate = myToDate = today.strftime('%Y-%m-%d')
+
+        url = "https://api.schwabapi.com/marketdata/v1/chains"
+        params = {
+            "symbol": "$SPX",
+            "contractType": "ALL",
+            "strikeCount": local_strike_cnt,
+            "includeUnderlyingQuote": "true",
+            "strategy": "SINGLE",
+            "fromDate": myFromDate,
+            "toDate": myToDate
+        }
+
+        headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer {local_accessToken}"
+        }
+
+        response = requests.get(url, headers=headers, params=params, timeout=REQUESTS_GET_TIMEOUT)
+        response.raise_for_status()
+
+        try:
+            spx_chain = response.json()
+            # print(f'\n00 spx_chain data:\n{spx_chain}\n')
+
+
+        except requests.exceptions.JSONDecodeError:
+            raise ValueError("3030 Error decoding JSON response from Schwab API")
+
+        if not isinstance(spx_chain, dict):
+            raise ValueError("3040 SPX chain response is not a dictionary")
+        
+
+        return spx_chain
+
+    except requests.exceptions.ConnectionError as conn_err:
+        raise RuntimeError("3050 Network error: Unable to connect to Schwab API") from conn_err
+    
+    except requests.exceptions.Timeout as timeout_err:
+        raise RuntimeError("3060 Request timeout: Schwab API took too long to respond") from timeout_err
+    
+    except requests.exceptions.HTTPError as http_err:
+        print(f"3070 HTTP error: {http_err}, response: {response.text}")
+        raise RuntimeError(f"3072 HTTP error occurred: {http_err}") from http_err
+    
+    except Exception as err:
+        raise RuntimeError(f"3080 Unexpected error occurred: {err}") from err
+    
+
+
+
+def extract_chain_quotes(data):
+    try:
+        # with open(file_path, 'r') as file:
+        #     data = json.load(file)
+
+        extracted = []
+
+        def extract_options(exp_date_map):
+            for exp_date in exp_date_map.values():
+                for strike_group in exp_date.values():
+                    for option in strike_group:
+                        extracted.append({
+                            "symbol": option.get("symbol"),
+                            "bid": option.get("bid"),
+                            "ask": option.get("ask"),
+                            "last": option.get("last")
+                        })
+
+
+        # Extract from underlying ($SPX itself)
+        if "underlying" in data:
+            underlying = data["underlying"]
+            extracted.append({
+                "symbol": underlying.get("symbol"),
+                "bid": underlying.get("bid"),
+                "ask": underlying.get("ask"),
+                "last": underlying.get("last")  # Optional: include 'last' if desired
+            })
+
+        if "callExpDateMap" in data:
+            extract_options(data["callExpDateMap"])
+
+        if "putExpDateMap" in data:
+            extract_options(data["putExpDateMap"])
+
+
+
+        # return {"data": extracted}
+        return extracted
+
+    except FileNotFoundError:
+        print("Error: File not found.")
+    except json.JSONDecodeError:
+        print("Error: File does not contain valid JSON.")
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+
+
+
+
+
+def parse_spx_chain(spx_chain):
+    """Parses the SPX option chain and extracts relevant strike symbols."""
+    global call_strike_list, put_strike_list
+    global strike_list_lock
+
+    # print(f'in parse_spx_chain')
+
+    # temp_day_high_distance = abs(spx_close - spx_high)
+    # temp_day_low_distance = abs(spx_close - spx_low)
+    # temp_current_max_distance = max(temp_day_high_distance, temp_day_low_distance)
+
+    # info_str = f'3950 spx_high:{spx_high:.2f}, spx_low:{spx_low:.2f}, current spx:{spx_close:.2f}, current max distance:{temp_current_max_distance:.2f}'
+    # print(info_str)
+    # logging.info(info_str)
+
+    if not isinstance(spx_chain, dict):
+        print("Invalid spx_chain format")
+        return
+
+    call_map = spx_chain.get("callExpDateMap", {})
+    put_map = spx_chain.get("putExpDateMap", {})
+
+    for exp_date, strikes in call_map.items():
+        for strike_price, options in strikes.items():
+            for option in options:
+                symbol = option.get("symbol", "")
+                if symbol.startswith("SPXW  ") and "C0" in symbol:
+                    with strike_list_lock:
+                        if symbol not in call_strike_list:
+                            call_strike_list.append(symbol)
+
+    print(f'2072 call_strike_list size: {len(call_strike_list)}')
+
+    for exp_date, strikes in put_map.items():
+        for strike_price, options in strikes.items():
+            for option in options:
+                symbol = option.get("symbol", "")
+                if symbol.startswith("SPXW  ") and "P0" in symbol:
+                    with strike_list_lock:
+                        if symbol not in put_strike_list:
+                            put_strike_list.append(symbol)
+
+    print(f'2074 put_strike_list size: {len(put_strike_list)}')
+
+
+
 
 
 
@@ -1468,6 +1703,8 @@ def meic_entry():
     global gbl_market_open_flag
 
     global requested_grid_time, requested_grid_flag
+
+    global spx_chain, chain_quotes
 
 
     # outer meic loop
@@ -1541,6 +1778,7 @@ def meic_entry():
                 gbl_market_open_flag = market_open_flag
                 
                 if not market_open_flag:
+                    initialize_globals()
                     break # break out of inner meic loop and back into the outer meic loop
             
 
@@ -1640,7 +1878,35 @@ def meic_entry():
             
                 print(f'\n==============================================================================')
                 print(f'Requesting SPX grid data at {now_time_str }')
-                publish_grid_request()
+                # publish_grid_request()
+
+
+                spx_chain = chain_quotes = None
+
+                print(f'Getting SPX option chain')
+
+                try:
+
+                    spx_chain = get_spx_option_chain()
+
+                except Exception as e:
+                    print(f"get_spx_option_chain returned an exception: {e}")
+                    spx_chain = None
+
+
+                # print(f'\n\n00 spx_chain type:{type(spx_chain)}, data:\n{spx_chain}')
+
+                if spx_chain is not None:
+                    chain_quotes = extract_chain_quotes(spx_chain)
+                    if chain_quotes is not None:
+                        # print(f'\n\n11 chain_quotes type:{type(chain_quotes)}, data:\n{chain_quotes}')
+                        pass
+
+                    else:
+                        print(f'chain_quotes was None')
+
+                else:
+                    print(f'spx_chain was None')
 
                 if live_trading_flag:
                     info_str = "LIVE"
@@ -1651,6 +1917,9 @@ def meic_entry():
 
                 print(f'770B Scheduled Entry Times ({info_str}):')
                 show_times(entry_times)
+
+                print(f'Requesting SPX grid data at {now_time_str }')
+                publish_grid_request()
 
 
 

@@ -50,6 +50,12 @@ time_since_last_stream = 0
 
 market_open_flag = False
 
+msg_q_size = 0
+msg_q_prev_size = 0
+msg_q_highwater = 0
+msg_q_prev_highwater = 0
+
+
 
 
 logging.basicConfig(
@@ -187,6 +193,8 @@ def on_message(client, userdata, msg):
     global total_on_message_cnt, on_message_dbg
     global gbl_got_grid_request_ts_str1
 
+    global msg_q_size, msg_q_prev_size, msg_q_highwater, msg_q_prev_highwater
+
     try:
 
         total_on_message_cnt += 1
@@ -217,7 +225,9 @@ def on_message(client, userdata, msg):
             time_str = current_time.strftime('%H:%M:%S.%f')[:-3]
 
             request_id = topic.split('/')[-1]
-            quote_df_copy = quote_df.copy()
+            with quote_df_lock:
+                quote_df_copy = quote_df.copy()
+
             rows_with_nan_bid_ask = quote_df_copy[['bid', 'ask']].isna().any(axis=1).sum()
 
             if time_since_last_quereied < 90 and time_since_last_stream < 20:
@@ -250,6 +260,12 @@ def on_message(client, userdata, msg):
         on_message_dbg = 10702
         message_queue.put((topic, payload))
         on_message_dbg = 10703
+
+        msg_q_size = message_queue.qsize()
+        if msg_q_highwater < msg_q_size:
+            msg_q_highwater = msg_q_size
+
+
 
     except Exception as e:
 
@@ -1132,6 +1148,8 @@ def grid_handling():
     global time_since_last_stream
     global time_since_last_quereied
 
+    global msg_q_size, msg_q_prev_size, msg_q_highwater, msg_q_prev_highwater
+
     initialize_data()
 
 
@@ -1172,6 +1190,22 @@ def grid_handling():
                 print(f'\ngrid gh market closed at {now_time_str} local')
 
             continue
+
+        if msg_q_prev_highwater < msg_q_highwater:
+            msg_q_prev_highwater = msg_q_highwater
+            print(f'\nQUEUE !!! new q highwater:{msg_q_highwater}, size:{msg_q_size}\n')
+
+        elif msg_q_size > 2 and msg_q_prev_size < msg_q_size:
+            msg_q_prev_size = msg_q_size
+            print(f'\nQUEUE !!! higher size:{msg_q_size}, highwater:{msg_q_highwater}\n')
+
+        elif gh_loop % 30 == 3:
+            print(f'\nQUEUE !!! size:{msg_q_size}, highwater:{msg_q_highwater}\n')
+
+
+        if msg_q_size < msg_q_prev_size:
+            msg_q_prev_size = msg_q_size
+
 
 
         display_quote_throttle += 1
@@ -1415,6 +1449,8 @@ def initialize_data():
     global throttle_rx_cnt_display
     global total_on_message_cnt, on_message_dbg
 
+    global msg_q_prev_size, msg_q_size, msg_q_prev_highwater, msg_q_highwater
+
 
     gbl_total_message_count = 0
     time_since_last_quereied = 0
@@ -1427,6 +1463,8 @@ def initialize_data():
     throttle_rx_cnt_display = 0
     total_on_message_cnt = 0
     on_message_dbg = 0
+
+    msg_q_prev_size = msg_q_size = msg_q_prev_highwater = msg_q_highwater = 0
     
 
 
