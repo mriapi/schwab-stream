@@ -4,14 +4,27 @@ import meic
 # import streamer
 import requests
 import mri_schwab_lib
+import meic_config
+import importlib
 
 
-
-# LONG_LEG_STOP_FACTOR = 1.25
-LONG_LEG_STOP_FACTOR = 1.5
+# # LONG_LEG_STOP_FACTOR = 1.25
+# LONG_LEG_STOP_FACTOR = 1.4
+# # LONG_LEG_STOP_FACTOR = 1.5
 
 # STOP_LOSS_FACTOR = 0.80
-STOP_LOSS_FACTOR = 0.75
+# # STOP_LOSS_FACTOR = 0.75
+
+
+
+importlib.reload(meic_config)
+
+long_leg_factor = meic_config.LONG_LEG_STOP_FACTOR
+stop_loss_factor = meic_config.STOP_LOSS_FACTOR
+
+
+
+
 
 
 
@@ -120,6 +133,14 @@ def enter_spread_with_triggers(real_flag, schwab_client, hash, opt_type, short_l
 
 
 def generate_order_STO_spread_with_triggers(short_sym, short_bid, long_sym, long_ask, qty):
+
+
+    importlib.reload(meic_config)
+
+    long_leg_factor = meic_config.LONG_LEG_STOP_FACTOR
+    stop_loss_factor = meic_config.STOP_LOSS_FACTOR
+
+
     # Calculate the price and stopPrice
     price = short_bid - long_ask
     original_price = price
@@ -129,7 +150,7 @@ def generate_order_STO_spread_with_triggers(short_sym, short_bid, long_sym, long
     # TODO: FIX_ME: comment this out
     price += 5
 
-    stop_price = original_price * 2 + (long_ask * LONG_LEG_STOP_FACTOR) - 0.10
+    stop_price = original_price * 2 + (long_ask * long_leg_factor) - 0.10
 
 
 
@@ -260,6 +281,56 @@ def generate_order_STO_spread_with_triggers(short_sym, short_bid, long_sym, long
     # print(json_order_str)
     
     return json_order
+
+
+
+def generate_ITM_protection_order_form(short_sym, long_sym, qty):
+
+
+    # Create the JSON order
+    json_order = {
+        # "childOrderStrategies": [
+        #     {
+        "orderType": "MARKET",
+        "session": "NORMAL",
+        # "stopPrice": f"{stop_price:.2f}",
+        "duration": "DAY",
+        "orderStrategyType": "TRIGGER",
+        "orderLegCollection": [
+            {
+                "instruction": "BUY_TO_CLOSE",
+                "quantity": qty,
+                "instrument": {
+                    "symbol": short_sym,
+                    "assetType": "OPTION"
+                }
+            }
+        ],
+        "childOrderStrategies": [
+            {
+                "orderType": "MARKET",
+                "session": "NORMAL",
+                "duration": "DAY",
+                "orderStrategyType": "SINGLE",
+                "orderLegCollection": [
+                    {
+                        "instruction": "SELL_TO_CLOSE",
+                        "quantity": qty,
+                        "instrument": {
+                            "symbol": long_sym,
+                            "assetType": "OPTION"
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+    #     ]
+    # }
+
+
+    return json_order
+
 
 
 def place_order(order_form):
@@ -525,6 +596,14 @@ def generate_order_STO_IC_with_triggers(
     put_long_ask,
     qty
 ):
+    
+    importlib.reload(meic_config)
+
+    long_leg_factor = meic_config.LONG_LEG_STOP_FACTOR
+    stop_loss_factor = meic_config.STOP_LOSS_FACTOR
+    
+
+
     # Calculate the price and stopPrice
     call_price = (call_short_bid - call_long_ask)
     call_net_credit = call_short_bid - call_long_ask
@@ -541,26 +620,24 @@ def generate_order_STO_IC_with_triggers(
 
     ic_price -= 0.10
 
-    # for test
-    # ic_price += 30
-
-
+    # # for testing, ensure that the order will not be filled.
+    # ic_price += 40
 
 
 
     #calculate call spread stop price
     # call_stop_price = ((call_original_price * 2) + (call_long_ask * LONG_LEG_STOP_FACTOR)) - 0.10
-    call_stop_price = ((call_net_credit * 2) + (call_long_ask * LONG_LEG_STOP_FACTOR)) * STOP_LOSS_FACTOR
+    call_stop_price = ((call_net_credit * 2) + (call_long_ask * long_leg_factor)) * stop_loss_factor
 
     cnc = call_net_credit
     cnc2x = (cnc) * 2
     print(f'call short:{call_short_bid}, call long:{call_long_ask}, cnc:{cnc} *2:{cnc2x}')
-    clo = call_long_ask * LONG_LEG_STOP_FACTOR
-    print(f'clo:{clo}, long factor:{LONG_LEG_STOP_FACTOR}')
+    clo = call_long_ask * long_leg_factor
+    print(f'clo:{clo}, long factor:{long_leg_factor}')
     cs100 = (cnc2x + clo) * 1.00
     print(f'cs100:{cs100:.2f}')
-    cs_factored = (cnc2x + clo) * STOP_LOSS_FACTOR
-    print(f'cs_factored:{cs_factored:.2f}, factor:{STOP_LOSS_FACTOR}')
+    cs_factored = (cnc2x + clo) * stop_loss_factor
+    print(f'cs_factored:{cs_factored:.2f}, factor:{stop_loss_factor}')
     print(f'')
 
 
@@ -575,17 +652,17 @@ def generate_order_STO_IC_with_triggers(
     #calculate put spread stop price
     # put_stop_price = ((put_original_price * 2) + (put_long_ask * LONG_LEG_STOP_FACTOR)) - 0.10
     # put_stop_price = ((put_original_price * 2) + (put_long_ask * LONG_LEG_STOP_FACTOR)) * 0.80
-    put_stop_price = ((put_net_credit * 2) + (put_long_ask * LONG_LEG_STOP_FACTOR)) * STOP_LOSS_FACTOR
+    put_stop_price = ((put_net_credit * 2) + (put_long_ask * long_leg_factor)) * stop_loss_factor
 
     pnc = put_net_credit
     pnc2x = (pnc) *2
     print(f'put short:{put_short_bid}, put long:{put_long_ask}, pnc:{pnc} *2:{pnc2x}')
-    plo = put_long_ask * LONG_LEG_STOP_FACTOR
-    print(f'plo:{plo}, long factor:{LONG_LEG_STOP_FACTOR}')
+    plo = put_long_ask * long_leg_factor
+    print(f'plo:{plo}, long factor:{long_leg_factor}')
     ps100 = (pnc2x + plo) * 1.00
     print(f'ps100:{ps100:.2f}')
-    ps_factored = (pnc2x + plo) * STOP_LOSS_FACTOR
-    print(f'ps_factored:{ps_factored:.2f}, factor:{STOP_LOSS_FACTOR}')
+    ps_factored = (pnc2x + plo) * stop_loss_factor
+    print(f'ps_factored:{ps_factored:.2f}, factor:{stop_loss_factor}')
     print(f'')
 
 

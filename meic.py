@@ -867,7 +867,12 @@ def process_message():
             persist_string(display_str)
             # show_pacific_times(entry_times)
 
+            display_str = f'current processed times:{processed_times}'
+            print(display_str)
+            persist_string(display_str)
+
             print()
+
 
             if not gbl_short_positions:
                 info_str = f'No existing short positions'
@@ -925,9 +930,26 @@ def process_message():
                 else:
                     credit_display = "N/A"
 
-                atm_string = f"SPX:{spx_price:.2f}, ATM straddle:{atm_straddle:.2f}, credit target:{credit_display}"
-                print(atm_string)
-                persist_string(atm_string)
+                if spx_price is not None:
+                    spx_display = f"{spx_price:.2f}" 
+                else:
+                    spx_display = "N/A"
+
+                if atm_straddle is not None:
+                    atm_display = f"{atm_straddle:.2f}" 
+                else:
+                    atm_display = "N/A"
+
+
+                try:
+                    atm_string = f"SPX:{spx_display}, ATM straddle:{atm_display}, credit target:{credit_display}"
+                    print(atm_string)
+                    persist_string(atm_string)
+
+                except Exception as e:
+                    print(f'\n89073 exception trying to format and display spx, straddle, target credit, e:{e}')
+
+
 
                 if cs_len == 0:
                     info_str = f'call short was not selected'
@@ -1260,7 +1282,7 @@ def process_message():
                     
                     pass
 
-                print(f'current processed times:{processed_times}')
+                # print(f'current processed times:{processed_times}')
 
 
                 pass
@@ -1490,7 +1512,14 @@ def check_trading_day():
     # if today is a 'no-trade' day
     if is_no_trade_day or is_weekend_day:
         trade_today_flag = False
-        print(f'today, {today_str}, is either a weekend day or a blackout date,  trade_today_flag:{trade_today_flag}')
+
+        day_message = ""
+        if is_weekend_day:
+            day_message = "is a weekend day"
+        elif is_no_trade_day:
+            day_message = "is a blackout day"
+
+        print(f'today, {today_str}, {day_message},  trade_today_flag:{trade_today_flag}')
 
     else:
         trade_today_flag = True
@@ -1732,15 +1761,17 @@ def meic_entry():
                 # show_times_raw(entry_times)
 
                 if live_trading_flag:
-                    info_str = "LIVE"
+                    info_str = " !!!! LIVE LIVE LIVE !!!! "
                 else:
-                    info_str = "PAPER"
+                    info_str = "  ~~~ paper ~~~  "
 
+                update_meic_config()
 
                 check_trading_day()
+                
 
 
-                print(f'770C Scheduled Entry Times ({info_str}):')
+                print(f'770C Scheduled Entry Times for {info_str} trading:')
                 show_times(entry_times)
                 # print()
 
@@ -1752,6 +1783,8 @@ def meic_entry():
         seconds_to_next_minute = market_open.seconds_until_even_minute() + 3
 
         seconds_to_minute_int = math.floor(seconds_to_next_minute)
+
+        update_meic_config()
 
         inner_miec_cnt = 0
 
@@ -1914,6 +1947,8 @@ def meic_entry():
                     info_str = "PAPER"
 
                 check_trading_day()
+
+                update_meic_config()
 
                 print(f'770B Scheduled Entry Times ({info_str}):')
                 show_times(entry_times)
