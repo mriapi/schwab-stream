@@ -236,10 +236,13 @@ def display_lists(opt_short, opt_long):
 
 def calc_short_target(current_EM):
     global max_short_target, min_short_target
+    global em_max, em_min
 
     importlib.reload(recommend_config)
     max_short_target = recommend_config.MAX_SHORT_TARGET
     min_short_target = recommend_config.MIN_SHORT_TARGET
+    em_max = recommend_config.EM_MAX
+    em_min = recommend_config.EM_MIN
 
     
     # Set the variables em_max and em_min

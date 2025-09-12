@@ -646,8 +646,8 @@ else:
     print("\nNo transactions")
 
 
-print(f'\naccount_number:{account_number}')
-print(f'\naccount_hash:{account_hash}')
+# print(f'\naccount_number:{account_number}')
+# print(f'\naccount_hash:{account_hash}')
 
 print(f'\nshort_positions type:{type(short_positions)}, data:{short_positions}')
 print(f'\nshort_positions:')

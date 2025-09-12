@@ -819,7 +819,8 @@ def get_tokens():
 
 
     
-    if arg_one == "refresh" or all_initialized_flag == False or refresh_expired_flag == True:
+    # if arg_one == "refresh" or all_initialized_flag == False or refresh_expired_flag == True:
+    if arg_one == "refresh" or all_initialized_flag == False:
 
 
         if arg_one == "refresh":
