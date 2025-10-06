@@ -10,6 +10,9 @@ import time
 import sys
 import threading
 import paho.mqtt.client as mqtt
+from paho.mqtt.enums import CallbackAPIVersion
+
+
 import market_open
 
 
@@ -694,6 +697,159 @@ def refresh_auth_token():
 
 
 
+def regen_all_tokens():
+
+    appKey, appSecret, tokensFile = load_env_variables()
+
+    print(f'rat appKey:{appKey}')
+
+
+    authUrl = f'https://api.schwabapi.com/v1/oauth/authorize?client_id={appKey}&redirect_uri=https://127.0.0.1'
+
+
+
+    # Open the URL in the default web browser
+    webbrowser.open(authUrl)
+    print(f"Opening browser for authentication: {authUrl}")
+
+
+    # print(f"Click to authenticate: {authUrl}")
+
+    returnedLink = input("Paste the redirect URL here:")
+
+    code = f"{returnedLink[returnedLink.index('code=')+5:returnedLink.index('%40')]}@"
+
+    print(f'code:{code}')
+
+
+    headers = {'Authorization': f'Basic {base64.b64encode(bytes(f"{appKey}:{appSecret}", "utf-8")).decode("utf-8")}', 'Content-Type': 'application/x-www-form-urlencoded'}
+    data= {'grant_type': 'authorization_code', 'code': code, 'redirect_uri': 'https://127.0.0.1'}
+    response = requests.post('https://api.schwabapi.com/v1/oauth/token', headers=headers, data=data)
+
+    print(f'oauth response.status_code:{response.status_code}')
+
+    responseCode = response.status_code
+    
+    # responseCode = 400 # test failed post
+    if responseCode != 200:
+        print(f'\n\n!!!!!!!!!!!!!! oauth failed! response.status_code:{responseCode}, text:{response.text}')
+        print(f'deleting {mri_tokens_file} and exiting the program!!!!')
+
+
+        # Ensure the file exists before attempting to delete
+        if os.path.exists(mri_tokens_file):
+            os.remove(mri_tokens_file)
+            print(f"Deleted: {mri_tokens_file}")
+        else:
+            print(f"File not found: {mri_tokens_file}")
+            pass
+        
+        os._exit(1)  # Immediately terminates the entire process
+
+    else:
+        print(f'oauth succeeded')
+
+
+
+
+
+    tD = response.json()
+
+    # print(f'tD type:{type(tD)}, data:\n{tD}')
+
+    access_token = tD['access_token']
+    refresh_token = tD['refresh_token']
+    id_token = tD['id_token']
+
+    # print()
+    # print(f'access_token type:{type(access_token)}, value:<{access_token}>')
+    # print(f'refresh_token type:{type(refresh_token)}, value:<{refresh_token}>')    
+    # print(f'id_token type:{type(id_token)}, value:<{id_token}>') 
+
+
+
+    base_url = 'https://api.schwabapi.com/trader/v1'
+
+    full_url = f'{base_url}/accounts/accountNumbers'
+
+    response = requests.get(f'{base_url}/accounts/accountNumbers', headers={'Authorization': f'Bearer {access_token}'})
+    
+    # print(f'7021 accountNumbers:{response.status_code}')
+    # print(f'7022 data:{response.json()}')
+    
+    # print(response.json())
+
+    
+    # Save JSON response
+    response_json = response.json()
+    # print(f'7934 response_json:{response_json}')
+    # print(f'7935 full_url:{full_url}')
+
+    # Extract values
+    acctNum = response_json[0]['accountNumber']
+    hashVal = response_json[0]['hashValue']
+
+    print()
+    print(f'acctNum type:{type(acctNum)}, value:<{acctNum}>')
+    print(f'hashVal type:{type(hashVal)}, value:<{hashVal}>')   
+
+    utc_val = get_current_utc()
+    # print(f'0792 utc_val type:{type(utc_val)}, value:{utc_val}')
+
+    
+
+    # Convert datetime object to ISO format string
+    utc_json = json.dumps({"utc_val": utc_val.isoformat()})
+
+    # print(f'0794 utc_json type: {type(utc_json)}, value: {utc_json}')
+
+
+
+        
+    # Generate timestamps for access and refresh token issuance
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+
+
+    # Construct the JSON object
+    token_data = {
+        "access_token_issued": now_iso,
+        "refresh_token_issued": now_iso,
+        "token_dictionary": {
+            "expires_in": 1800,
+            "token_type": "Bearer",
+            "scope": "api",
+            "refresh_token": refresh_token,  # Previously stored global variable
+            "access_token": access_token,    # Previously stored global variable
+            "id_token": id_token             # Previously stored global variable
+        }
+    }
+
+    # print(f'834-1 saving token object to file {mri_tokens_file}')
+
+    # Save the JSON object to the file
+    with open(mri_tokens_file, "w") as f:
+        json.dump(token_data, f, indent=4)
+
+    print(f"834-1 Token data saved to {mri_tokens_file}")
+
+
+
+    # Construct the JSON object
+    acct_data = {
+        "account_number": acctNum,
+        "account_hash": hashVal
+    }
+
+    # print(f'834-2 saving account object to file {mri_acct_file}')
+
+    # Save the JSON object to the file
+    with open(mri_acct_file, "w") as f:
+        json.dump(acct_data, f, indent=4)
+
+    print(f"834-3 Account data saved to {mri_acct_file}")
+
+
 
 
 
@@ -812,9 +968,19 @@ def get_tokens():
         refresh_days_left = refresh_minutes_left/MINUTES_IN_A_DAY
 
 
+    if refresh_days_left < 0 and arg_one != "refresh":
+        print(f'\n\n!!!!!!!!! refresh token has expired: {refresh_days_left:.1f} days')
+        print(f'!!!!!!!!! Exiting. Re-run the program with "refresh" parameter:\n    python manage_tokens.py refresh\n')
+
+        os._exit(1)
+
+
+
 
     if refresh_days_left < 1:
         print(f'!!!!!!!!! WARNING !!!!!!!!!! refresh token expires in {refresh_days_left:.1f} days')
+
+
 
 
 
@@ -823,160 +989,178 @@ def get_tokens():
     if arg_one == "refresh" or all_initialized_flag == False:
 
 
-        if arg_one == "refresh":
-            print(f'command line refresh requested')
+        # if arg_one == "refresh":
+        #     print(f'command line refresh requested')
             
 
-        else:
-            print(f'Less than a day left in the refresh token. Days left:{refresh_days_left}. Renewing')
+        # else:
+        #     print(f'Less than a day left in the refresh token. Days left:{refresh_days_left}. Renewing')
 
-        arg_one = None
+        # arg_one = None
+
+
+
+
+
     
 
-        authUrl = f'https://api.schwabapi.com/v1/oauth/authorize?client_id={appKey}&redirect_uri=https://127.0.0.1'
 
 
 
-        # Open the URL in the default web browser
-        webbrowser.open(authUrl)
-        print(f"Opening browser for authentication: {authUrl}")
 
 
-        # print(f"Click to authenticate: {authUrl}")
 
-        returnedLink = input("Paste the redirect URL here:")
-
-        code = f"{returnedLink[returnedLink.index('code=')+5:returnedLink.index('%40')]}@"
-
-        print(f'code:{code}')
+        # regen_all_tokens()
 
 
-        headers = {'Authorization': f'Basic {base64.b64encode(bytes(f"{appKey}:{appSecret}", "utf-8")).decode("utf-8")}', 'Content-Type': 'application/x-www-form-urlencoded'}
-        data= {'grant_type': 'authorization_code', 'code': code, 'redirect_uri': 'https://127.0.0.1'}
-        response = requests.post('https://api.schwabapi.com/v1/oauth/token', headers=headers, data=data)
+        # authUrl = f'https://api.schwabapi.com/v1/oauth/authorize?client_id={appKey}&redirect_uri=https://127.0.0.1'
 
-        print(f'oauth response.status_code:{response.status_code}')
 
-        responseCode = response.status_code
+
+        # # Open the URL in the default web browser
+        # webbrowser.open(authUrl)
+        # print(f"Opening browser for authentication: {authUrl}")
+
+
+        # # print(f"Click to authenticate: {authUrl}")
+
+        # returnedLink = input("Paste the redirect URL here:")
+
+        # code = f"{returnedLink[returnedLink.index('code=')+5:returnedLink.index('%40')]}@"
+
+        # print(f'code:{code}')
+
+
+        # headers = {'Authorization': f'Basic {base64.b64encode(bytes(f"{appKey}:{appSecret}", "utf-8")).decode("utf-8")}', 'Content-Type': 'application/x-www-form-urlencoded'}
+        # data= {'grant_type': 'authorization_code', 'code': code, 'redirect_uri': 'https://127.0.0.1'}
+        # response = requests.post('https://api.schwabapi.com/v1/oauth/token', headers=headers, data=data)
+
+        # print(f'oauth response.status_code:{response.status_code}')
+
+        # responseCode = response.status_code
         
-        # responseCode = 400 # test failed post
-        if responseCode != 200:
-            print(f'\n\n!!!!!!!!!!!!!! oauth failed! response.status_code:{responseCode}, text:{response.text}')
-            print(f'deleting {mri_tokens_file} and exiting the program!!!!')
+        # # responseCode = 400 # test failed post
+        # if responseCode != 200:
+        #     print(f'\n\n!!!!!!!!!!!!!! oauth failed! response.status_code:{responseCode}, text:{response.text}')
+        #     print(f'deleting {mri_tokens_file} and exiting the program!!!!')
 
 
-            # Ensure the file exists before attempting to delete
-            if os.path.exists(mri_tokens_file):
-                os.remove(mri_tokens_file)
-                print(f"Deleted: {mri_tokens_file}")
-            else:
-                print(f"File not found: {mri_tokens_file}")
-                pass
+        #     # Ensure the file exists before attempting to delete
+        #     if os.path.exists(mri_tokens_file):
+        #         os.remove(mri_tokens_file)
+        #         print(f"Deleted: {mri_tokens_file}")
+        #     else:
+        #         print(f"File not found: {mri_tokens_file}")
+        #         pass
             
-            os._exit(1)  # Immediately terminates the entire process
+        #     os._exit(1)  # Immediately terminates the entire process
 
-        else:
-            print(f'oauth succeeded')
-
-
+        # else:
+        #     print(f'oauth succeeded')
 
 
 
-        tD = response.json()
 
-        # print(f'tD type:{type(tD)}, data:\n{tD}')
 
-        access_token = tD['access_token']
-        refresh_token = tD['refresh_token']
-        id_token = tD['id_token']
+        # tD = response.json()
+
+        # # print(f'tD type:{type(tD)}, data:\n{tD}')
+
+        # access_token = tD['access_token']
+        # refresh_token = tD['refresh_token']
+        # id_token = tD['id_token']
+
+        # # print()
+        # # print(f'access_token type:{type(access_token)}, value:<{access_token}>')
+        # # print(f'refresh_token type:{type(refresh_token)}, value:<{refresh_token}>')    
+        # # print(f'id_token type:{type(id_token)}, value:<{id_token}>') 
+
+
+
+        # base_url = 'https://api.schwabapi.com/trader/v1'
+
+        # full_url = f'{base_url}/accounts/accountNumbers'
+
+        # response = requests.get(f'{base_url}/accounts/accountNumbers', headers={'Authorization': f'Bearer {access_token}'})
+        
+        # # print(f'7021 accountNumbers:{response.status_code}')
+        # # print(f'7022 data:{response.json()}')
+        
+        # # print(response.json())
+
+        
+        # # Save JSON response
+        # response_json = response.json()
+        # # print(f'7934 response_json:{response_json}')
+        # # print(f'7935 full_url:{full_url}')
+
+        # # Extract values
+        # acctNum = response_json[0]['accountNumber']
+        # hashVal = response_json[0]['hashValue']
 
         # print()
-        # print(f'access_token type:{type(access_token)}, value:<{access_token}>')
-        # print(f'refresh_token type:{type(refresh_token)}, value:<{refresh_token}>')    
-        # print(f'id_token type:{type(id_token)}, value:<{id_token}>') 
+        # print(f'acctNum type:{type(acctNum)}, value:<{acctNum}>')
+        # print(f'hashVal type:{type(hashVal)}, value:<{hashVal}>')   
 
-
-
-        base_url = 'https://api.schwabapi.com/trader/v1'
-
-        full_url = f'{base_url}/accounts/accountNumbers'
-
-        response = requests.get(f'{base_url}/accounts/accountNumbers', headers={'Authorization': f'Bearer {access_token}'})
-        
-        # print(f'7021 accountNumbers:{response.status_code}')
-        # print(f'7022 data:{response.json()}')
-        
-        # print(response.json())
-
-        
-        # Save JSON response
-        response_json = response.json()
-        # print(f'7934 response_json:{response_json}')
-        # print(f'7935 full_url:{full_url}')
-
-        # Extract values
-        acctNum = response_json[0]['accountNumber']
-        hashVal = response_json[0]['hashValue']
-
-        print()
-        print(f'acctNum type:{type(acctNum)}, value:<{acctNum}>')
-        print(f'hashVal type:{type(hashVal)}, value:<{hashVal}>')   
-
-        utc_val = get_current_utc()
-        # print(f'0792 utc_val type:{type(utc_val)}, value:{utc_val}')
+        # utc_val = get_current_utc()
+        # # print(f'0792 utc_val type:{type(utc_val)}, value:{utc_val}')
 
         
 
-        # Convert datetime object to ISO format string
-        utc_json = json.dumps({"utc_val": utc_val.isoformat()})
+        # # Convert datetime object to ISO format string
+        # utc_json = json.dumps({"utc_val": utc_val.isoformat()})
 
-        # print(f'0794 utc_json type: {type(utc_json)}, value: {utc_json}')
+        # # print(f'0794 utc_json type: {type(utc_json)}, value: {utc_json}')
 
 
 
             
-        # Generate timestamps for access and refresh token issuance
-        now_iso = datetime.now(timezone.utc).isoformat()
+        # # Generate timestamps for access and refresh token issuance
+        # now_iso = datetime.now(timezone.utc).isoformat()
 
 
 
-        # Construct the JSON object
-        token_data = {
-            "access_token_issued": now_iso,
-            "refresh_token_issued": now_iso,
-            "token_dictionary": {
-                "expires_in": 1800,
-                "token_type": "Bearer",
-                "scope": "api",
-                "refresh_token": refresh_token,  # Previously stored global variable
-                "access_token": access_token,    # Previously stored global variable
-                "id_token": id_token             # Previously stored global variable
-            }
-        }
+        # # Construct the JSON object
+        # token_data = {
+        #     "access_token_issued": now_iso,
+        #     "refresh_token_issued": now_iso,
+        #     "token_dictionary": {
+        #         "expires_in": 1800,
+        #         "token_type": "Bearer",
+        #         "scope": "api",
+        #         "refresh_token": refresh_token,  # Previously stored global variable
+        #         "access_token": access_token,    # Previously stored global variable
+        #         "id_token": id_token             # Previously stored global variable
+        #     }
+        # }
 
-        # print(f'834-1 saving token object to file {mri_tokens_file}')
+        # # print(f'834-1 saving token object to file {mri_tokens_file}')
 
-        # Save the JSON object to the file
-        with open(mri_tokens_file, "w") as f:
-            json.dump(token_data, f, indent=4)
+        # # Save the JSON object to the file
+        # with open(mri_tokens_file, "w") as f:
+        #     json.dump(token_data, f, indent=4)
 
-        print(f"834-1 Token data saved to {mri_tokens_file}")
+        # print(f"834-1 Token data saved to {mri_tokens_file}")
 
 
 
-        # Construct the JSON object
-        acct_data = {
-            "account_number": acctNum,
-            "account_hash": hashVal
-        }
+        # # Construct the JSON object
+        # acct_data = {
+        #     "account_number": acctNum,
+        #     "account_hash": hashVal
+        # }
 
-        # print(f'834-2 saving account object to file {mri_acct_file}')
+        # # print(f'834-2 saving account object to file {mri_acct_file}')
 
-        # Save the JSON object to the file
-        with open(mri_acct_file, "w") as f:
-            json.dump(acct_data, f, indent=4)
+        # # Save the JSON object to the file
+        # with open(mri_acct_file, "w") as f:
+        #     json.dump(acct_data, f, indent=4)
 
-        print(f"834-3 Account data saved to {mri_acct_file}")
+        # print(f"834-3 Account data saved to {mri_acct_file}")
+
+
+
+        pass
 
 
 
@@ -1163,6 +1347,8 @@ def mqtt_services():
     global gbl_mqtt_client 
 
     client = mqtt.Client()
+
+
     gbl_mqtt_client  = client
     client.on_connect = on_connect
     client.on_message = on_message
@@ -1177,9 +1363,133 @@ def mqtt_services():
 
 
 
+meic_folder = r"C:\MEIC"
+cred_folder = os.path.join(meic_folder, "cred")
+acct_file = os.path.join(cred_folder, "acct_mri.json")
+tokens_file = os.path.join(cred_folder, "tokens_mri.json")
+
+
+
+def check_cred_files():
+
+    files_valid = True
+
+    
+        # Check and create C:\MEIC
+    if not os.path.exists(meic_folder):
+        os.makedirs(meic_folder)
+        print(f"Created MEIC folder: {meic_folder}")
+        files_valid = False
+    else:
+        pass
+
+    # Check and create C:\MEIC\cred
+    if not os.path.exists(cred_folder):
+        os.makedirs(cred_folder)
+        print(f"Created cred folder: {cred_folder}")
+        files_valid = False
+    else:
+        pass
+
+
+
+
+        # (1) Check acct_mri.json
+    if os.path.exists(acct_file):
+        try:
+            with open(acct_file, 'r') as f:
+                acct_data = json.load(f)
+            if "account_number" in acct_data and "account_hash" in acct_data:
+                print("✅ acct_mri.json found and valid:")
+                # print(f"  account_number: {acct_data['account_number']}")
+                # print(f"  account_hash:   {acct_data['account_hash']}")
+
+            else:
+                print("⚠️ acct_mri.json is missing required keys.")
+                files_valid = False
+        except Exception as e:
+            print(f"❌ Error reading acct_mri.json: {e}")
+            files_valid = False
+    else:
+        print("📁 acct_mri.json not found.")
+        files_valid = False
+
+    # (2) Check tokens_mri.json
+    if os.path.exists(tokens_file):
+        try:
+            with open(tokens_file, 'r') as f:
+                tokens_data = json.load(f)
+            td = tokens_data.get("token_dictionary", {})
+            required_keys = [
+                "access_token_issued", "refresh_token_issued", "token_dictionary",
+                "expires_in", "token_type", "scope", "refresh_token", "access_token", "id_token"
+            ]
+            missing = [key for key in required_keys if key not in tokens_data and key not in td]
+            if missing:
+                print(f"⚠️ tokens_mri.json is missing keys: {missing}")
+                files_valid = False
+            else:
+                print("✅ tokens_mri.json found and valid:")
+                # print(f"  access_token_issued:  {tokens_data['access_token_issued']}")
+                # print(f"  refresh_token_issued: {tokens_data['refresh_token_issued']}")
+                # print("  token_dictionary:")
+                # print(f"    expires_in:    {td['expires_in']}")
+                # print(f"    token_type:    {td['token_type']}")
+                # print(f"    scope:         {td['scope']}")
+                # print(f"    refresh_token: {td['refresh_token']}")
+                # print(f"    access_token:  {td['access_token']}")
+                # print(f"    id_token:      {td['id_token']}")
+
+        except Exception as e:
+            print(f"❌ Error reading tokens_mri.json: {e}")
+            files_valid = False
+    else:
+        print("📁 tokens_mri.json not found.")
+        files_valid = False
+
+    print()
+    return files_valid
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def manage_tokens_task():
+
+    global arg_one
+
+    print(f'mtg arg_one:{arg_one}')
+
+    if arg_one == "refresh":
+        regen_all_tokens()
+        arg_one = None
+
+
+    cred_validity = check_cred_files()
+
+    if not cred_validity:
+        print(f'\n\n!!!!!! At least one error occurred with credential files.')
+        print(f'!!!!!!Exiting.  Re-run the program with "refresh" parameter:\n    python manage_tokens.py refresh\n')
+        os._exit(1)
+
+
+
+
+
+
     while True:
         try:
             # my_time = datetime.now()
