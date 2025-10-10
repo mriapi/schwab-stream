@@ -843,7 +843,7 @@ def process_message():
 
             if (spx_chain is not None) and (chain_quotes is not None):
 
-                print(f'8305 got spx_chain and chain_quotes')
+                print(f'MEIC: got spx_chain and chain_quotes')
                 # print(f'2 spx_chain type:{type(spx_chain)}, data:\n{spx_chain}')
                 # print(f'2 chain_quotes type:{type(chain_quotes)}, data:\n{chain_quotes}')
                 # print(f'mqtt payload_stripped type:{type(payload_stripped)}, data:\n{payload_stripped}')
@@ -1124,7 +1124,7 @@ def process_message():
                 else:
                     info_str = "PAPER"
 
-                # print(f'Scheduled Entry Times ({info_str}):')
+                # print(f'2097 Scheduled Entry Times ({info_str}):')
                 # show_times(entry_times)
 
 
@@ -1484,7 +1484,8 @@ def check_trading_day():
 
     else:
         trade_today_flag = True
-        print(f'today, {today_str}, is a trading day,  trade_today_flag:{trade_today_flag}')
+        # print(f'today, {today_str}, is a trading day,  trade_today_flag:{trade_today_flag}')
+        pass
 
 
 
@@ -1878,7 +1879,7 @@ def meic_entry():
 
                 spx_chain = chain_quotes = None
 
-                print(f'Getting SPX option chain')
+                # print(f'Getting SPX option chain')
 
                 try:
 
@@ -1905,15 +1906,15 @@ def meic_entry():
                     print(f'spx_chain was None')
 
                 if live_trading_flag:
-                    info_str = "LIVE"
+                    info_str = "LIVE trading"
                 else:
-                    info_str = "PAPER"
+                    info_str = "PAPER trading"
 
                 check_trading_day()
 
                 update_meic_config()
 
-                print(f'770B Scheduled Entry Times ({info_str}):')
+                print(f'Scheduled Entry Times ({info_str}):')
                 show_times(entry_times)
 
                 # print(f'2 Requesting SPX grid data at {now_time_str }')
@@ -2302,7 +2303,7 @@ def meic_loop():
 #         print()
         
 
-#         print(f'Scheduled Entry Times:')
+#         print(f'1894 Scheduled Entry Times:')
 #         show_times(entry_times)
 
     
