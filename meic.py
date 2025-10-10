@@ -1159,6 +1159,9 @@ def process_message():
                     # print(f'770E Scheduled Entry Times ({info_str}):')
                     # show_times(entry_times)
 
+
+                    new_entry_time = False
+
                         
                     for entry_time in entry_times:
 
@@ -1172,7 +1175,7 @@ def process_message():
                         # Check if the time is crossed but not processed
                         if entry_time_today <= current_time and entry_time not in processed_times:
 
-                            info_str = f'{current_time_str} matches a new entry time'
+                            info_str = f'{current_time_str} Eastern matches a new entry time'
                             persist_string(info_str)
                             print(info_str)
 
@@ -1275,7 +1278,7 @@ def process_message():
                             processed_times.add(entry_time)
 
                         else:
-                            # print(f'{current_time_str} is not a new entry time')
+                            # print(f'{current_time_str} Eastern is not a new entry time')
                             pass
 
 
@@ -1294,7 +1297,7 @@ def process_message():
                     pass
 
                 else:
-                    print(f'{current_time_str} ({current_time_local_str} Pacific) is not a new entry time')
+                    print(f'{current_time_str} ({current_time_local_str} Pacific) is NOT a new entry time')
                     
                     pass
 
@@ -1330,6 +1333,7 @@ def process_message():
 
 
 
+            print()
             atm_string = f'SPX:{spx_price:.2f}, ATM straddle:{atm_straddle:.2f}, credit target:{target_credit:.2f}'
             print(atm_string)
             persist_string(atm_string)
