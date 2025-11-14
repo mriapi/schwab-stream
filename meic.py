@@ -774,59 +774,76 @@ def process_message():
 
 
 
-        # Get the (topic, message) tuple from the queue
-        # topic, payload = message_queue.get()
 
-        try:
-            topic, payload = message_queue.get(timeout=1)  # 1 second timeout
 
-        except queue.Empty: 
+        if chain_quotes is not None:
+            # print(f'\n\n31 chain_quotes type:{type(chain_quotes)}, data:\n{chain_quotes}')
+            # print(f'\n\n41 chain_quotes type:{type(chain_quotes)}, is not None')
+            # print(f'2043 requested_grid_flag:{requested_grid_flag}')
+            pass
 
-            now_time = datetime.now()
+
+
+
+
+
+
+
+
+
+
+
+
+        # # Get the (topic, message) tuple from the queue
+        # # topic, payload = message_queue.get()
+
+        # try:
+        #     topic, payload = message_queue.get(timeout=1)  # 1 second timeout
+
+        # except queue.Empty: 
+
+        #     now_time = datetime.now()
         
-            if requested_grid_flag and requested_grid_time:
-                elapsed = now_time - requested_grid_time
-                print(f"20940 Elapsed grid request time: {elapsed.total_seconds():.3f} seconds")
+        #     if requested_grid_flag and requested_grid_time:
+        #         elapsed = now_time - requested_grid_time
+        #         print(f"20940 Elapsed grid request time: {elapsed.total_seconds():.3f} seconds")
 
-                if elapsed.total_seconds() > 4:
-                    info_str = f'timed out waiting for grid data, elapsed seconds:{elapsed.total_seconds():.3f}'
-                    print(info_str)
-                    persist_string(info_str)
-                    requested_grid_flag = False
-                    requested_grid_time = None
-
-
-
-
-            continue
+        #         if elapsed.total_seconds() > 4:
+        #             info_str = f'timed out waiting for grid data, elapsed seconds:{elapsed.total_seconds():.3f}'
+        #             print(info_str)
+        #             persist_string(info_str)
+        #             requested_grid_flag = False
+        #             requested_grid_time = None
 
 
 
 
+        #     continue
 
 
-        gbl_total_message_count += 1
+        # gbl_total_message_count += 1
 
 
-        payload_dict = json.loads(payload)
-        # print(f"02 Received message on topic:<{topic}> payload:\n{json.dumps(payload_dict, indent=2)}")
+        # payload_dict = json.loads(payload)
+        # # print(f"02 Received message on topic:<{topic}> payload:\n{json.dumps(payload_dict, indent=2)}")
 
 
-        if "schwab/spx/grid/response" in topic:
+        # if "schwab/spx/grid/response" in topic:
+        if chain_quotes is not None:
 
             if not requested_grid_flag:
                 print(f'meic got unexpected grid response')
                 continue
 
 
-            payload_stripped = [
-                {k: v for k, v in item.items() if k not in ('bid_time', 'ask_time', 'last_time')}
-                for item in payload_dict
-            ]
+            # payload_stripped = [
+            #     {k: v for k, v in item.items() if k not in ('bid_time', 'ask_time', 'last_time')}
+            #     for item in payload_dict
+            # ]
 
             if (spx_chain is not None) and (chain_quotes is not None):
 
-                print(f'\ngot spx_chain and chain_quotes')
+                print(f'MEIC: got spx_chain and chain_quotes')
                 # print(f'2 spx_chain type:{type(spx_chain)}, data:\n{spx_chain}')
                 # print(f'2 chain_quotes type:{type(chain_quotes)}, data:\n{chain_quotes}')
                 # print(f'mqtt payload_stripped type:{type(payload_stripped)}, data:\n{payload_stripped}')
@@ -834,35 +851,34 @@ def process_message():
                 
 
 
-
-
-            end_time = datetime.now()
-            now_time_ms_str = end_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
+            # end_time = datetime.now()
+            # now_time_ms_str = end_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
             
-            request_id = topic.split('/')[-1]
+            # request_id = topic.split('/')[-1]
 
-            # print(f'\n<><><><><><><><><><><><><><><><><><><><><><><><><><><>')
-            # print(f'meic got grid request response at {now_time_ms_str}, received request id:{request_id}, prev req id:{prev_grid_request_id} ')
+            # # print(f'\n<><><><><><><><><><><><><><><><><><><><><><><><><><><>')
+            # # print(f'meic got grid request response at {now_time_ms_str}, received request id:{request_id}, prev req id:{prev_grid_request_id} ')
 
-            if "meic" in request_id:
-                if request_id != prev_grid_request_id:
-                    print(f'Request ID mismatch!!! prev_grid_request_id:<{prev_grid_request_id}>, received request_id:<{request_id}>')
-                    time.sleep(0.01)
-                    continue
+            # if "meic" in request_id:
+            #     if request_id != prev_grid_request_id:
+            #         print(f'Request ID mismatch!!! prev_grid_request_id:<{prev_grid_request_id}>, received request_id:<{request_id}>')
+            #         time.sleep(0.01)
+            #         continue
 
             requested_grid_flag = False
 
 
             end_time = datetime.now()
             current_time = end_time.strftime('%H:%M:%S')
-            elapsed_time = end_time - gbl_round_trip_start
-            # Extract the total milliseconds from the elapsed time
-            elapsed_milliseconds = int(elapsed_time.total_seconds() * 1000)
+            # elapsed_time = end_time - gbl_round_trip_start
+            # # Extract the total milliseconds from the elapsed time
+            # elapsed_milliseconds = int(elapsed_time.total_seconds() * 1000)
 
             # Print the elapsed time in milliseconds
             display_str= f'\n=================================='
             persist_string(display_str)
-            display_str = f'meic: checking for entry at {current_time} Pacific Time.  Elapsed grid request/response time: {elapsed_milliseconds} mS'
+            # display_str = f'meic: checking for entry at {current_time} Pacific Time.  Elapsed grid request/response time: {elapsed_milliseconds} mS'
+            display_str = f'meic: checking for entry at {current_time} Pacific Time'
             print(display_str)
             persist_string(display_str)
             # show_pacific_times(entry_times)
@@ -1108,7 +1124,7 @@ def process_message():
                 else:
                     info_str = "PAPER"
 
-                # print(f'Scheduled Entry Times ({info_str}):')
+                # print(f'2097 Scheduled Entry Times ({info_str}):')
                 # show_times(entry_times)
 
 
@@ -1143,6 +1159,9 @@ def process_message():
                     # print(f'770E Scheduled Entry Times ({info_str}):')
                     # show_times(entry_times)
 
+
+                    new_entry_time = False
+
                         
                     for entry_time in entry_times:
 
@@ -1156,7 +1175,7 @@ def process_message():
                         # Check if the time is crossed but not processed
                         if entry_time_today <= current_time and entry_time not in processed_times:
 
-                            info_str = f'{current_time_str} matches a new entry time'
+                            info_str = f'{current_time_str} Eastern matches a new entry time'
                             persist_string(info_str)
                             print(info_str)
 
@@ -1259,7 +1278,7 @@ def process_message():
                             processed_times.add(entry_time)
 
                         else:
-                            # print(f'{current_time_str} is not a new entry time')
+                            # print(f'{current_time_str} Eastern is not a new entry time')
                             pass
 
 
@@ -1278,7 +1297,7 @@ def process_message():
                     pass
 
                 else:
-                    print(f'{current_time_str} ({current_time_local_str} Pacific) is not a new entry time')
+                    print(f'{current_time_str} ({current_time_local_str} Pacific) is NOT a new entry time')
                     
                     pass
 
@@ -1314,70 +1333,7 @@ def process_message():
 
 
 
-            # atm_string = f'SPX:{spx_price:.2f}, ATM straddle:{atm_straddle:.2f}, credit target:{target_credit:.2f}'
-            # print(atm_string)
-            # persist_string(atm_string)
-
-            # info_string = ""
-            # print(info_string)
-            # persist_string(info_string)
-
-            # display_spread("Call", call_spread)
-            # display_spread(" Put", put_spread)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            # if 'net' in call_spread or 'net' in put_spread:
-            #     display_str = f'\nSymbols:'
-            #     persist_string(display_str)
-            #     print(display_str)
-
-
-            # if 'net' in call_spread:
-            #     call_short_sym, call_long_sym = get_syms(call_short, call_long)
-            #     call_syms = f'{call_short_sym}/{call_long_sym}'
-            #     call_syms_display = "Call " + call_syms
-            #     persist_string(call_syms_display)
-            #     print(call_syms_display)
-
-            # if 'net' in put_spread:
-            #     put_short_sym, put_long_sym = get_syms(put_short, put_long)
-            #     put_syms = f'{put_short_sym}/{put_long_sym}'
-            #     put_syms_display = " Put " + put_syms
-            #     persist_string(put_syms_display)
-            #     print(put_syms_display)
-
-
-            # info_string = ""
-            # print(info_string)
-            # persist_string(info_string)
-
-
-
-
-
-
-
-
-
-
-
-
-
+            print()
             atm_string = f'SPX:{spx_price:.2f}, ATM straddle:{atm_straddle:.2f}, credit target:{target_credit:.2f}'
             print(atm_string)
             persist_string(atm_string)
@@ -1401,12 +1357,17 @@ def process_message():
             pass
 
         else:
-            print(f'received unexpected topic:<{topic}>, payload_dict type{type(payload_dict)}, data:\n{payload_dict}')
+            # print(f'received unexpected topic:<{topic}>, payload_dict type{type(payload_dict)}, data:\n{payload_dict}')
+            
+            # current_time = datetime.now(eastern)
+            # current_time_str = current_time.strftime('%H:%M:%S')
+            # print(f'2 chain_quotes was None at {current_time_str}')
             pass
 
+        
 
-
-        time.sleep(0.1)
+        # time.sleep(0.1)
+        time.sleep(1)
 
 
 
@@ -1431,7 +1392,7 @@ def publish_grid_request():
     now_time = datetime.now()
     now_time_str = now_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
 
-    print(f'meic: {now_time_str} publishing grid request topic:<{topic}>, req id:{req_id}')
+    # print(f'meic: {now_time_str} publishing grid request topic:<{topic}>, req id:{req_id}')
 
     mqtt_client.publish(topic, " ")
 
@@ -1523,7 +1484,8 @@ def check_trading_day():
 
     else:
         trade_today_flag = True
-        print(f'today, {today_str}, is a trading day,  trade_today_flag:{trade_today_flag}')
+        # print(f'today, {today_str}, is a trading day,  trade_today_flag:{trade_today_flag}')
+        pass
 
 
 
@@ -1910,13 +1872,14 @@ def meic_entry():
 
             
                 print(f'\n==============================================================================')
-                print(f'Requesting SPX grid data at {now_time_str }')
+                # print(f'1 Requesting SPX grid data at {now_time_str }')
+                print(f'MEIC entry check at {now_time_str } Pacific')
                 # publish_grid_request()
 
 
                 spx_chain = chain_quotes = None
 
-                print(f'Getting SPX option chain')
+                # print(f'Getting SPX option chain')
 
                 try:
 
@@ -1933,28 +1896,29 @@ def meic_entry():
                     chain_quotes = extract_chain_quotes(spx_chain)
                     if chain_quotes is not None:
                         # print(f'\n\n11 chain_quotes type:{type(chain_quotes)}, data:\n{chain_quotes}')
+                        # print(f'\n\n11 chain_quotes type:{type(chain_quotes)}, is not None')
                         pass
 
                     else:
-                        print(f'chain_quotes was None')
+                        print(f'1 chain_quotes was None')
 
                 else:
                     print(f'spx_chain was None')
 
                 if live_trading_flag:
-                    info_str = "LIVE"
+                    info_str = "LIVE trading"
                 else:
-                    info_str = "PAPER"
+                    info_str = "PAPER trading"
 
                 check_trading_day()
 
                 update_meic_config()
 
-                print(f'770B Scheduled Entry Times ({info_str}):')
+                print(f'Scheduled Entry Times ({info_str}):')
                 show_times(entry_times)
 
-                print(f'Requesting SPX grid data at {now_time_str }')
-                publish_grid_request()
+                # print(f'2 Requesting SPX grid data at {now_time_str }')
+                # publish_grid_request()
 
 
 
@@ -2339,7 +2303,7 @@ def meic_loop():
 #         print()
         
 
-#         print(f'Scheduled Entry Times:')
+#         print(f'1894 Scheduled Entry Times:')
 #         show_times(entry_times)
 
     

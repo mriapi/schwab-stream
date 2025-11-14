@@ -622,6 +622,10 @@ def generate_order_STO_IC_with_triggers(
 
     # # for testing, ensure that the order will not be filled.
     # ic_price += 40
+    # print(f'\n\n!!!!!!!!!!!!!!!!!!!!!!!!!!! PRICE SET TOO HIGH FOR TEST !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n')
+    # print(f'\n\n!!!!!!!!!!!!!!!!!!!!!!!!!!! PRICE SET TOO HIGH FOR TEST !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n')
+    # print(f'\n\n!!!!!!!!!!!!!!!!!!!!!!!!!!! PRICE SET TOO HIGH FOR TEST !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n')
+
 
 
 
