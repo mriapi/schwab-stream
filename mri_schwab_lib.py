@@ -545,7 +545,7 @@ def get_positions():
 
 
 
-def get_current_option_buying_power():
+def get_option_buying_power():
 
     returnVal = None
 
