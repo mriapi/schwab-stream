@@ -538,6 +538,80 @@ def get_positions():
 
 
 
+
+
+
+
+
+
+
+def get_current_option_buying_power():
+
+    returnVal = None
+
+    try:
+
+        
+        access_token = get_access_token()
+        # print(f'access_token type{type(access_token)}, data:\n{access_token}')
+
+
+
+        # Define the API URL
+        url = "https://api.schwabapi.com/trader/v1/accounts?"
+
+        # Set headers for the request
+        headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer {access_token}"
+        }
+
+        # Make the API request
+        response = requests.get(url, headers=headers)
+
+        # print(f'100 response.status_code:{response.status_code}')
+
+        if response.status_code == 200:
+            response_json = response.json()
+            # print(f'response_json:\n{response_json}')
+            # print("Formatted response_json:")
+            # print(json.dumps(response_json, indent=2))
+
+            
+            # Navigate to the nested field
+            myBuyingPowerFl = float(
+                response_json[0]['securitiesAccount']['currentBalances']['buyingPowerNonMarginableTrade']
+            )
+            
+            # print(f"My Buying Power: {myBuyingPowerFl}")
+
+            returnVal = myBuyingPowerFl
+
+
+
+            # balances = data['securitiesAccount']['currentBalances']
+            # print("Buying Power:", balances.get('buyingPower'))
+            # print("Cash Available:", balances.get('cashAvailableForTrading'))
+            # print("Margin Balance:", balances.get('marginBalance'))
+        else:
+            print("buying power response Error:", response.status_code, response.text)
+
+
+    except Exception as e:
+        print(f'error attempting to get buying power:{e}')
+
+
+
+    return returnVal
+
+
+
+
+
+
+
+
+
 def get_today_in_epoch():
     global todays_epoch_time 
 
