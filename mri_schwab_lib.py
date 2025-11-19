@@ -547,7 +547,8 @@ def get_positions():
 
 def get_option_buying_power():
 
-    returnVal = None
+    buyingPowerFl = None
+    initialBalanceFl = None
 
     try:
 
@@ -579,13 +580,17 @@ def get_option_buying_power():
 
             
             # Navigate to the nested field
-            myBuyingPowerFl = float(
+            buyingPowerFl = float(
                 response_json[0]['securitiesAccount']['currentBalances']['buyingPowerNonMarginableTrade']
             )
-            
             # print(f"My Buying Power: {myBuyingPowerFl}")
 
-            returnVal = myBuyingPowerFl
+            initialBalanceFl = float(
+                response_json[0]['securitiesAccount']['initialBalances']['cashBalance']
+            )
+            # print(f"initial balance: {initialBalanceFl}")
+
+            
 
 
 
@@ -602,7 +607,7 @@ def get_option_buying_power():
 
 
 
-    return returnVal
+    return buyingPowerFl, initialBalanceFl
 
 
 
