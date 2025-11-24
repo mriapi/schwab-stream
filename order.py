@@ -621,23 +621,38 @@ def generate_order_STO_IC_with_triggers(
     ic_price -= 0.10
 
     # # for testing, ensure that the order will not be filled.
-    # ic_price += 40
-    # print(f'\n\n!!!!!!!!!!!!!!!!!!!!!!!!!!! PRICE SET TOO HIGH FOR TEST !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n')
-    # print(f'\n\n!!!!!!!!!!!!!!!!!!!!!!!!!!! PRICE SET TOO HIGH FOR TEST !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n')
-    # print(f'\n\n!!!!!!!!!!!!!!!!!!!!!!!!!!! PRICE SET TOO HIGH FOR TEST !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n')
+    # ic_price += 50
+    # print(f'\n\n!!!!!!!!!!!!!!!!!!!!!!!!!!! TESTING -- PRICE SET TOO HIGH FOR FILL !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n')
+    # print(f'!!!!!!!!!!!!!!!!!!!!!!!!!!! TESTING -- PRICE SET TOO HIGH FOR FILL !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n')
+    # print(f'!!!!!!!!!!!!!!!!!!!!!!!!!!! TESTING -- PRICE SET TOO HIGH FOR FILL !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n')
 
+    long_leg_factor_adj = long_leg_factor
+    if call_long_ask > 0.5:
+        long_leg_factor_adj = long_leg_factor_adj * 1.05
+    
+    if call_long_ask > 1:
+        long_leg_factor_adj = long_leg_factor_adj * 1.05
+
+    if call_long_ask > 1.5:
+        long_leg_factor_adj = long_leg_factor_adj * 1.05
+
+    if call_long_ask > 2.0:
+        long_leg_factor_adj = long_leg_factor_adj * 1.05
+
+    if call_long_ask > 2.5:
+        long_leg_factor_adj = long_leg_factor_adj * 1.05
 
 
 
     #calculate call spread stop price
     # call_stop_price = ((call_original_price * 2) + (call_long_ask * LONG_LEG_STOP_FACTOR)) - 0.10
-    call_stop_price = ((call_net_credit * 2) + (call_long_ask * long_leg_factor)) * stop_loss_factor
+    call_stop_price = ((call_net_credit * 2) + (call_long_ask * long_leg_factor_adj)) * stop_loss_factor
 
     cnc = call_net_credit
     cnc2x = (cnc) * 2
     print(f'call short:{call_short_bid}, call long:{call_long_ask}, cnc:{cnc} *2:{cnc2x}')
-    clo = call_long_ask * long_leg_factor
-    print(f'clo:{clo}, long factor:{long_leg_factor}')
+    clo = call_long_ask * long_leg_factor_adj
+    print(f'clo:{clo}, long factor adjusted:{long_leg_factor_adj}')
     cs100 = (cnc2x + clo) * 1.00
     print(f'cs100:{cs100:.2f}')
     cs_factored = (cnc2x + clo) * stop_loss_factor
@@ -656,13 +671,13 @@ def generate_order_STO_IC_with_triggers(
     #calculate put spread stop price
     # put_stop_price = ((put_original_price * 2) + (put_long_ask * LONG_LEG_STOP_FACTOR)) - 0.10
     # put_stop_price = ((put_original_price * 2) + (put_long_ask * LONG_LEG_STOP_FACTOR)) * 0.80
-    put_stop_price = ((put_net_credit * 2) + (put_long_ask * long_leg_factor)) * stop_loss_factor
+    put_stop_price = ((put_net_credit * 2) + (put_long_ask * long_leg_factor_adj)) * stop_loss_factor
 
     pnc = put_net_credit
     pnc2x = (pnc) *2
     print(f'put short:{put_short_bid}, put long:{put_long_ask}, pnc:{pnc} *2:{pnc2x}')
-    plo = put_long_ask * long_leg_factor
-    print(f'plo:{plo}, long factor:{long_leg_factor}')
+    plo = put_long_ask * long_leg_factor_adj
+    print(f'plo:{plo}, long factor adjusted:{long_leg_factor_adj}')
     ps100 = (pnc2x + plo) * 1.00
     print(f'ps100:{ps100:.2f}')
     ps_factored = (pnc2x + plo) * stop_loss_factor

@@ -548,7 +548,7 @@ def get_positions():
 def get_option_buying_power():
 
     buyingPowerFl = None
-    initialBalanceFl = None
+    currentFundsForTrading = None
 
     try:
 
@@ -590,6 +590,14 @@ def get_option_buying_power():
             )
             # print(f"initial balance: {initialBalanceFl}")
 
+             
+
+            currentFundsForTrading = float(
+                response_json[0]['securitiesAccount']['currentBalances']['availableFundsNonMarginableTrade']
+
+            )
+            # print(f"currentFundsForTrading: {currentFundsForTrading}")
+
             
 
 
@@ -604,10 +612,12 @@ def get_option_buying_power():
 
     except Exception as e:
         print(f'error attempting to get buying power:{e}')
+        buyingPowerFl = None
+        currentFundsForTrading = None
 
 
 
-    return buyingPowerFl, initialBalanceFl
+    return buyingPowerFl, currentFundsForTrading
 
 
 

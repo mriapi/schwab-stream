@@ -85,8 +85,8 @@ def load_env_variables():
     mri_tokens_file  = os.getenv('MRI_TOKENS_FILE_PATH')
     mri_acct_file  = os.getenv('MRI_ACCT_FILE_PATH')
 
-    # print(f'my_local_app_key: {app_key}, my_local_secret_key: {secret_key}')
-    # print(f'tokens_file type: {type(tokens_file)}, value: {tokens_file}')
+    print(f'my_local_app_key: {my_app_key}, my_local_secret_key: {my_secret_key}')
+    print(f'tokens_file type: {type(tokens_file)}, value: {tokens_file}')
 
     return my_app_key, my_secret_key, my_tokens_file
 
