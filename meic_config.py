@@ -10,8 +10,8 @@
 # #                     08:58    09:28    09:58    10:13    10:58    11:28    11:43    11:58
 # config_meic_times = ["11:58", "12:28", "12:58", "13:13", "13:58", "14:28", "14:43", "14:58"]
 
-#                     08:58    09:58    10:13    10:28    11:43
-config_meic_times = ["11:58", "12:58", "13:13", "13:28", "14:43"] # selected on 11/19/25
+#                     08:58    09:58    10:13    10:28    11:58
+config_meic_times = ["11:58", "12:58", "13:13", "13:58", "14:58"] # selected on 11/26/25
 
 
 
@@ -49,7 +49,8 @@ LONG_LEG_STOP_FACTOR = 1.4
 # LONG_LEG_STOP_FACTOR = 1.5
 
 # STOP_LOSS_FACTOR = 0.80
-STOP_LOSS_FACTOR = 0.78
+# STOP_LOSS_FACTOR = 0.78
+STOP_LOSS_FACTOR = 0.76
 # STOP_LOSS_FACTOR = 0.75
 
 MULTIPLE_CONTRACTS_FLAG=True

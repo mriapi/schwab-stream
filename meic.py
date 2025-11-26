@@ -512,7 +512,7 @@ def wait_for_rx_credentials():
 
         else:
             time.sleep(1)
-            print("rx_ credentials not initialized yet")
+            # print("rx_ credentials not initialized yet")
             mqtt_client.publish(CREDS_REQUEST_TOPIC, " ")
 
 
@@ -786,8 +786,6 @@ def get_contract_quantity(call_short, call_long, put_short, put_long):
 
     myBuyingPower, currentAvailble = mri_schwab_lib.get_option_buying_power()
 
-
-    print(f'\n')
     meic_times = meic_config.config_meic_times  # List of "HH:MM" strings in Eastern Time
 
     # print(f'meic_times type:{type(meic_times)}, data:{meic_times}')
@@ -874,33 +872,42 @@ def get_contract_quantity(call_short, call_long, put_short, put_long):
 
 
     # Output results
-    print(f"Total times: {len(eastern_times)}")
-    print(f"Passed times: {passed_times}")
-    print(f"Remaining times: {remaining}")
-    print(f'cash available:{currentAvailble:.2f}, bp:{myBuyingPower:.2f}')
-    print(f'cash availble per entry for remining entry times:{availble_per_remaining:.2f}')
-    print(f'per entry buying power for remaining entries:{bp_per_remaining:.2f}')
+    total_times = {len(eastern_times)}
+    # print(f"Total times: {total_times}")
+    # print(f"Passed times: {passed_times}")
+    # print(f"Remaining times: {remaining}")
+
+    # print(f'Entry times:: total:{total_times}, passed:{passed_times} remaing:{remaining}')
+    info_str = f'Entry times:: total:{total_times}, passed:{passed_times} remaing:{remaining}'
+    print(info_str)
+    persist_string(info_str)
 
 
+    # print(f'cash available:{currentAvailble:.2f}, bp:{myBuyingPower:.2f}')
+    # print(f'cash availble per entry for remining entry times:{availble_per_remaining:.2f}')
 
-    print(f'60010 bp_for_entry:{bp_for_entry:.2f}')
-    print(f'60012 bp_to_be_used_per_contract for these spreads:{bp_to_be_used_per_contract:.2f}')
-    print(f'60013 calculated num_contracts:{num_contracts}')
+    # print(f'per entry buying power for remaining entries:{bp_per_remaining:.2f}')
+    info_str = f'\nPer entry buying power for remaining entries:{bp_per_remaining:.2f}'
+    print(info_str)
+    persist_string(info_str)
+
+
+    # print(f'60010 bp_for_entry:{bp_for_entry:.2f}')
+    # print(f'60012 bp_to_be_used_per_contract for these spreads:{bp_to_be_used_per_contract:.2f}')
+
+    # print(f'60013 calculated num_contracts:{num_contracts}')
+    info_str = f'calculated num_contracts:{num_contracts}'
+    print(info_str)
+    persist_string(info_str)
 
     returnVal = int(num_contracts)
     if returnVal > max_meic_contracts:
-        print(f'60040 calculated num_contracts was higher than max_meic_contracts')
+        # print(f'60040 calculated num_contracts was higher than max_meic_contracts')
         returnVal = max_meic_contracts
-        print(f'60041 adjusted num_contracts:{returnVal}')
-
-
-
-    print(f'\n')
-
-
-
-
-
+        # print(f'60041 adjusted num_contracts:{returnVal}')
+        info_str = f'adjusted num_contracts:{returnVal}'
+        print(info_str)
+        persist_string(info_str)
 
 
 
@@ -1011,7 +1018,7 @@ def process_message():
 
             if (spx_chain is not None) and (chain_quotes is not None):
 
-                print(f'MEIC: got spx_chain and chain_quotes')
+                # print(f'MEIC: got spx_chain and chain_quotes')
                 # print(f'2 spx_chain type:{type(spx_chain)}, data:\n{spx_chain}')
                 # print(f'2 chain_quotes type:{type(chain_quotes)}, data:\n{chain_quotes}')
                 # print(f'mqtt payload_stripped type:{type(payload_stripped)}, data:\n{payload_stripped}')
@@ -1045,13 +1052,15 @@ def process_message():
             # Print the elapsed time in milliseconds
             display_str= f'\n=================================='
             persist_string(display_str)
-            # display_str = f'meic: checking for entry at {current_time} Pacific Time.  Elapsed grid request/response time: {elapsed_milliseconds} mS'
-            display_str = f'meic: checking for entry at {current_time} Pacific Time'
-            print(display_str)
-            persist_string(display_str)
+
+            # display_str = f'meic: checking for entry at {current_time} Pacific Time'
+            # print(display_str)
+            # persist_string(display_str)
+
+
             # show_pacific_times(entry_times)
 
-            display_str = f'current processed times:{processed_times}'
+            display_str = f'previously processed entries:{processed_times}'
             print(display_str)
             persist_string(display_str)
 
@@ -1168,7 +1177,13 @@ def process_message():
             multi_contract_qty = get_contract_quantity(
                                     call_short, call_long, put_short, put_long)
             
-            print(f'multi_contract_qty:{multi_contract_qty}')
+
+            
+            
+            # print(f'multi-contract quantity for this entry time:{multi_contract_qty}')
+            info_str = f'multi-contract quantity for this entry time:{multi_contract_qty}\n'
+            print(info_str)
+            persist_string(info_str)
 
                 
 
@@ -1526,9 +1541,9 @@ def process_message():
             display_spread("Call", call_spread)
             display_spread(" Put", put_spread)
 
-            info_string = f'multi_contract_qty:{multi_contract_qty}'
-            print(info_string)
-            persist_string(info_string)
+            # info_string = f'multi_contract_qty:{multi_contract_qty}'
+            # print(info_string)
+            # persist_string(info_string)
 
 
             

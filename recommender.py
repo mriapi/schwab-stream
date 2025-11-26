@@ -18,6 +18,7 @@ import recommend_config
 import json
 import math
 import importlib
+from datetime import datetime
 
 
 importlib.reload(recommend_config)
@@ -94,6 +95,24 @@ def is_valid(value):
     return value is not None and not math.isnan(value)   
 
 
+
+def persist_string(string_data):
+    # Define the directory and ensure it exists
+    directory = r"C:\MEIC\tranche"
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    
+    # Generate the filename with current date and time in yymmddhhmmss format
+    current_datetime = datetime.now().strftime("%y%m%d")
+    filename = f"tranches_{current_datetime}.txt"
+    file_path = os.path.join(directory, filename)
+
+    # Ensure the directory exists
+    os.makedirs(directory, exist_ok=True)
+    
+    # Open the file in append mode, creating it if it doesn't exist, and append the string data
+    with open(file_path, 'a') as file:
+        file.write(string_data + '\n')
 
 
 def display_list(option_list):
@@ -1222,7 +1241,6 @@ def find_best_credit_spread(credit_target, option_list, short_position_list, lon
     #     last_range = 0.20
 
 
-        
 
 
     if credit_target <= 1.2:
@@ -1232,19 +1250,43 @@ def find_best_credit_spread(credit_target, option_list, short_position_list, lon
         last_range = 0.35
 
     elif credit_target <= 1.6:
-        last_range = 0.30
+        last_range = 0.29
 
     elif credit_target <= 1.8:
-        last_range = 0.30
+        last_range = 0.28
         
     elif credit_target <= 2.2:
-        last_range = 0.30
+        last_range = 0.27
         
     elif credit_target <= 2.6:
-        last_range = 0.30
+        last_range = 0.26
         
     else:
-        last_range = 0.30
+        last_range = 0.25
+
+
+
+
+    # if credit_target <= 1.2:
+    #     last_range = 0.45
+
+    # elif credit_target <= 1.4:
+    #     last_range = 0.35
+
+    # elif credit_target <= 1.6:
+    #     last_range = 0.30
+
+    # elif credit_target <= 1.8:
+    #     last_range = 0.30
+        
+    # elif credit_target <= 2.2:
+    #     last_range = 0.30
+        
+    # elif credit_target <= 2.6:
+    #     last_range = 0.30
+        
+    # else:
+    #     last_range = 0.30
 
 
 
@@ -1264,9 +1306,16 @@ def find_best_credit_spread(credit_target, option_list, short_position_list, lon
 
 
     if opt_type == "CALL":
-        print(f'\nstarting +/- range: {(last_range*100):.2f}%')
-        print(f'700010 config_max_net_credit:{config_max_net_credit:.2f}, config_min_net_credit:{config_min_net_credit:.2f}')
-        print(f'700020 max_short_target:{max_short_target:.2f}, min_short_target:{min_short_target:.2f}, em_max:{em_max}, em_min:{em_min}')
+
+        # print(f'\nstarting recommender +/- range: {(last_range*100):.2f}%')
+        info_str = f'\nstarting recommender +/- range: {(last_range*100):.2f}%'
+        print(info_str)
+        persist_string(info_str)
+
+
+        # persist tranche
+        # print(f'700010 config_max_net_credit:{config_max_net_credit:.2f}, config_min_net_credit:{config_min_net_credit:.2f}')
+        # print(f'700020 max_short_target:{max_short_target:.2f}, min_short_target:{min_short_target:.2f}, em_max:{em_max}, em_min:{em_min}')
 
 
 
@@ -1479,11 +1528,13 @@ def find_best_credit_spread_range(credit_target, range, option_list, short_posit
     if lowest_allowed_nc < config_min_net_credit:
         lowest_allowed_nc = config_min_net_credit
 
-    # print(f'in fbcsr() type:{opt_type}, credit_target:{credit_target:.2f} range:{range:.2f}, cfg min nc:{config_min_net_credit:.2f}, cfg max nc:{config_max_net_credit:.2f}')
-    print(f'in fbcsr() lowest allowed nc:{lowest_allowed_nc:.2f}, highest allowed nc:{highest_allowed_nc:.2f}')
+
+    if opt_type == "CALL":
+
+        # print(f'in fbcsr() type:{opt_type}, credit_target:{credit_target:.2f} range:{range:.2f}, cfg min nc:{config_min_net_credit:.2f}, cfg max nc:{config_max_net_credit:.2f}')
+        print(f'in fbcsr() lowest allowed nc:{lowest_allowed_nc:.2f}, highest allowed nc:{highest_allowed_nc:.2f}')
 
 
-    # print(f'fbcsr lowest nc:{lowest_allowed_nc:.2f}, highest nc:{highest_allowed_nc:.2f}')
 
 
 
