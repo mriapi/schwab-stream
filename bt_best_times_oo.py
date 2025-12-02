@@ -1,61 +1,9 @@
-# import csv
-# from collections import defaultdict
-# import pandas as pd
-
-# # Step 1: Read the CSV
-# df = pd.read_csv("trade-log.csv")
-
-# # Step 2: Group trades by time slot
-# # We'll use a dictionary to accumulate P/L and count iron condors
-# time_slot_data = defaultdict(lambda: {"pl": 0.0, "count": 0})
-
-# # Step 3: Sort by date and time to ensure pairing is consistent
-# df.sort_values(by=["Date Opened", "Time Opened"], inplace=True)
-
-# # Step 4: Iterate in pairs to find iron condors
-# i = 0
-# while i < len(df) - 1:
-#     row1 = df.iloc[i]
-#     row2 = df.iloc[i + 1]
-
-#     # Check if both rows share the same time slot and date
-#     if row1["Date Opened"] == row2["Date Opened"] and row1["Time Opened"] == row2["Time Opened"]:
-#         time_slot = row1["Time Opened"]
-#         total_pl = float(row1["P/L"]) + float(row2["P/L"])
-#         time_slot_data[time_slot]["pl"] += total_pl
-#         time_slot_data[time_slot]["count"] += 1
-#         i += 2  # move to next pair
-#     else:
-#         i += 1  # skip unpaired row
-
-# # Step 5: Convert to DataFrame
-# summary = []
-# for time_slot, data in time_slot_data.items():
-#     summary.append({
-#         "time_slot": time_slot,
-#         "P/L": round(data["pl"], 2),
-#         "#_trades": data["count"]
-#     })
-
-# summary_df = pd.DataFrame(summary)
-
-# # Step 6: Rank top 10 by P/L
-# summary_df["rank"] = ""
-# top10 = summary_df.nlargest(10, "P/L").sort_values(by="P/L", ascending=False).reset_index(drop=True)
-# for idx, row in top10.iterrows():
-#     summary_df.loc[summary_df["time_slot"] == row["time_slot"], "rank"] = str(idx + 1)
-
-# # Step 7: Reorder columns and save
-# summary_df = summary_df[["time_slot", "rank", "P/L", "#_trades"]]
-# summary_df.sort_values(by="time_slot", inplace=True)
-# summary_df.to_csv("oo_log_parsed.csv", index=False)
-
 
 
 import csv
 from collections import defaultdict
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import os
 
 import sys
@@ -274,6 +222,121 @@ def calc_aggregate(results_dir: str):
 
 
 
+def get_valid_date():
+    while True:
+        user_input = input("Enter a date (YYYY-MM-DD), or press Enter for today's date: ").strip()
+        
+        # Case 1: User pressed Enter → use today's date
+        if user_input == "":
+            return date.today().strftime("%Y-%m-%d")
+        
+        # Case 2: User entered something → validate format
+        try:
+            # Try parsing the input string into a datetime object
+            parsed_date = datetime.strptime(user_input, "%Y-%m-%d")
+            # If successful, return the string in correct format
+            return parsed_date.strftime("%Y-%m-%d")
+        except ValueError:
+            print("Invalid format. Please enter the date as YYYY-MM-DD (e.g., 2025-11-28).")
+
+
+
+
+# def find_last_date(source_file):
+#     """
+#     Reads a CSV file and returns the most recent date
+#     from the 'Date Opened' column.
+    
+#     Parameters:
+#         source_file (str): Path to the CSV file.
+    
+#     Returns:
+#         str: Most recent 'Date Opened' in YYYY-MM-DD format.
+#     """
+#     last_date = None
+
+#     row_cnt = 0
+    
+#     with open(source_file, newline='', encoding='utf-8') as csvfile:
+#         reader = csv.DictReader(csvfile)
+        
+#         for row in reader:
+#             row_cnt += 1
+
+#             if row_cnt < 5:
+#                 print(f'row_cnt:{row_cnt}, data:\n{row}')
+
+#             date_str = row.get("Date Opened")
+#             if date_str:
+#                 try:
+#                     current_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+#                     if last_date is None or current_date > last_date:
+#                         last_date = current_date
+#                 except ValueError:
+#                     if row_cnt < 5:
+#                         print(f'row has invalid format, date_str:{date_str}')
+#                     # Skip rows with invalid date format
+#                     continue
+
+#             else:
+#                 if row_cnt < 5:
+#                     print(f'date_str type:{type(date_str)}, value:{date_str}')
+
+
+
+#     print(f'2 row_cnt:{row_cnt}')
+    
+#     return last_date.strftime("%Y-%m-%d") if last_date else None
+
+
+
+def find_last_date(source_file):
+    last_date = None
+    with open(source_file, newline='', encoding='utf-8-sig') as csvfile:
+        reader = csv.DictReader(csvfile)
+        # Normalize headers
+        reader.fieldnames = [name.strip().strip('"').lstrip('\ufeff') for name in reader.fieldnames]
+
+        for row in reader:
+            date_str = row.get("Date Opened")
+            if date_str:
+                date_str = date_str.strip().strip('"')
+                try:
+                    current_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                    if last_date is None or current_date > last_date:
+                        last_date = current_date
+                except ValueError:
+                    continue
+
+    return last_date.strftime("%Y-%m-%d") if last_date else None
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+directory = "C:/MEIC/oo"
+filename = "trade-log.csv"
+file_spec = os.path.join(directory, filename)
+
+
+
+
+users_end_date = get_valid_date()
+print(f'users_end_date type:{type(users_end_date)}, value:{users_end_date}')
+
+file_end_date = find_last_date(file_spec)
+print(f'file_end_date type:{type(file_end_date)}, value:{file_end_date}')
+
 
 
 
@@ -287,9 +350,9 @@ intialize_summary_directory()
 
 
 
-directory = "C:/MEIC/oo"
-filename = "trade-log.csv"
-file_spec = os.path.join(directory, filename)
+
+
+
 df = pd.read_csv(file_spec)
 
 # Convert "Date Opened" to datetime

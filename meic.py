@@ -872,7 +872,7 @@ def get_contract_quantity(call_short, call_long, put_short, put_long):
 
 
     # Output results
-    total_times = {len(eastern_times)}
+    total_times = len(eastern_times)
     # print(f"Total times: {total_times}")
     # print(f"Passed times: {passed_times}")
     # print(f"Remaining times: {remaining}")
