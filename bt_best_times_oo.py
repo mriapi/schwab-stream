@@ -311,27 +311,6 @@ def find_last_date(source_file):
     return last_date.strftime("%Y-%m-%d") if last_date else None
 
 
-def find_first_date(source_file):
-    first_date = None
-    with open(source_file, newline='', encoding='utf-8-sig') as csvfile:
-        reader = csv.DictReader(csvfile)
-        # Normalize headers
-        reader.fieldnames = [name.strip().strip('"').lstrip('\ufeff') for name in reader.fieldnames]
-
-        for row in reader:
-            date_str = row.get("Date Opened")
-            if date_str:
-                date_str = date_str.strip().strip('"')
-                try:
-                    current_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-                    if first_date is None or current_date < first_date:
-                        first_date = current_date
-                except ValueError:
-                    continue
-
-    return first_date.strftime("%Y-%m-%d") if first_date else None
-
-
 
 
 
@@ -355,27 +334,8 @@ file_spec = os.path.join(directory, filename)
 users_end_date = get_valid_date()
 print(f'users_end_date type:{type(users_end_date)}, value:{users_end_date}')
 
-first_trade_date = find_first_date(file_spec)
-print(f'first_trade_date type:{type(first_trade_date)}, value:{first_trade_date}')
-
-last_trade_date = find_last_date(file_spec)
-print(f'last_trade_date type:{type(last_trade_date)}, value:{last_trade_date}')
-
-
-# Convert strings to datetime.date objects
-first_trade_date_dt = datetime.strptime(first_trade_date, "%Y-%m-%d").date()
-last_trade_date_dt = datetime.strptime(last_trade_date, "%Y-%m-%d").date()
-
-# Calculate inclusive day count
-days_inclusive = (last_trade_date_dt - first_trade_date_dt).days + 1
-
-print("first_trade_date_dt:", first_trade_date_dt)
-print("last_trade_date_dt:", last_trade_date_dt)
-print("Days inclusive:", days_inclusive)
-
-
-
-
+file_end_date = find_last_date(file_spec)
+print(f'file_end_date type:{type(file_end_date)}, value:{file_end_date}')
 
 
 
