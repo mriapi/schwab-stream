@@ -1,3 +1,16 @@
+# bt__best_times_oo.py
+#
+# - Run OptionOmega backtest over any 6-month period of time using the OO's max of entry 21 times.
+#   Those 21 times should the once you would most likely use in trading.  This normally
+#   means omitting the earlist and latest possible times of the session.
+# - export the log from OO and save as C:/MEIC/oo/trade-log.csv
+# - bt__best_times_oo.py will created a folder in C:/MEIC/oo, named with today's current date and
+#   will create and place these files in the folder 
+#       - oo_log_parsed_A_6m.csv (ranked entry times over the full 6-month OO test)
+#       - oo_log_parsed_B_3m.csv (ranked entry times over the last 3 months of the 6-month OO test)
+#       - oo_log_parsed_C_1m.csv (ranked entry times over the last montt of the 6-month OO test)
+#       - aggregate.csv (aggregated sum of oo_log_parsed_A_6m.csv, oo_log_parsed_B_3m.csv, and
+#         oo_log_parsed_C_1m.csv).  This gives more weight to later part of the 6-month test.
 
 
 import csv
@@ -10,14 +23,9 @@ import sys
 import pandas as pd
 
 
-
 ROOT_DIR = "C:\\MEIC\\oo"
 
 results_dir = ""
-
-
-
-
 
 
 def intialize_summary_directory():
@@ -352,31 +360,28 @@ file_spec = os.path.join(directory, filename)
 
 
 
-users_end_date = get_valid_date()
-print(f'users_end_date type:{type(users_end_date)}, value:{users_end_date}')
+# users_end_date = get_valid_date()
+# print(f'users_end_date type:{type(users_end_date)}, value:{users_end_date}')
 
+
+# get first and last trade dates as strings
 first_trade_date = find_first_date(file_spec)
 print(f'first_trade_date type:{type(first_trade_date)}, value:{first_trade_date}')
-
 last_trade_date = find_last_date(file_spec)
 print(f'last_trade_date type:{type(last_trade_date)}, value:{last_trade_date}')
 
 
-# Convert strings to datetime.date objects
+# Convert date strings to datetime.date objects
 first_trade_date_dt = datetime.strptime(first_trade_date, "%Y-%m-%d").date()
 last_trade_date_dt = datetime.strptime(last_trade_date, "%Y-%m-%d").date()
+print(f'first_trade_date_dt:{type(first_trade_date_dt)}", value:{first_trade_date_dt}')
+print(f'last_trade_date_dt:{type(last_trade_date_dt)}", value:{last_trade_date_dt}')
+
+
 
 # Calculate inclusive day count
 days_inclusive = (last_trade_date_dt - first_trade_date_dt).days + 1
-
-print("first_trade_date_dt:", first_trade_date_dt)
-print("last_trade_date_dt:", last_trade_date_dt)
 print("Days inclusive:", days_inclusive)
-
-
-
-
-
 
 
 
@@ -391,8 +396,6 @@ intialize_summary_directory()
 
 
 
-
-
 df = pd.read_csv(file_spec)
 
 # Convert "Date Opened" to datetime
@@ -400,6 +403,7 @@ df["Date Opened"] = pd.to_datetime(df["Date Opened"])
 
 # Today's date
 today = datetime.today()
+today2 = datetime.today().date()
 
 # Full dataset
 out_filename = f"oo_log_parsed_A_6m.csv"
@@ -410,18 +414,51 @@ process_summary(df.copy(), out_file_spec)
 # Last 3 months
 out_filename = f"oo_log_parsed_B_3m.csv"
 out_file_spec = os.path.join(results_dir, out_filename)
-three_months_ago = today - timedelta(days=90)
+
+# three_months_ago = today - timedelta(days=90)
+# df_3m = df[df["Date Opened"] >= three_months_ago]
+
+
+today_2 = datetime.today().date()
+print(f'B today_2 type:{type(today_2)}, value:{today_2}')
+# three_months_ago = today_2 - timedelta(days=90)
+three_months_ago = last_trade_date_dt - timedelta(days=90)
+print(f'three_months_ago type:{type(three_months_ago )}, value:{three_months_ago}')
+df["Date Opened"] = pd.to_datetime(df["Date Opened"]).dt.date
 df_3m = df[df["Date Opened"] >= three_months_ago]
-# process_summary(df_3m.copy(), "oo_log_parsed_B_3m.csv")
-process_summary(df.copy(), out_file_spec)
+print(f'df_3m type:{type(df_3m)}, data:\n{df_3m}')
+
+
+process_summary(df_3m.copy(), out_file_spec)
+# process_summary(df.copy(), out_file_spec)
+
+
+
+
 
 # Last 3 weeks
 out_filename = f"oo_log_parsed_C_1m.csv"
 out_file_spec = os.path.join(results_dir, out_filename)
-three_weeks_ago = today - timedelta(days=30)
-df_3w = df[df["Date Opened"] >= three_weeks_ago]
-# process_summary(df_3w.copy(), "oo_log_parsed_C_1m.csv")
-process_summary(df.copy(), out_file_spec)
+
+
+# one_month_ago = today - timedelta(days=30)
+# df_1m = df[df["Date Opened"] >= one_month_ago]
+
+today_2 = datetime.today().date()
+print(f'C today_2 type:{type(today_2)}, value:{today_2}')
+# one_month_ago = today_2 - timedelta(days=30)
+one_month_ago = last_trade_date_dt - timedelta(days=30)
+print(f'one_month_ago type:{type(one_month_ago)}, value:{one_month_ago}')
+df["Date Opened"] = pd.to_datetime(df["Date Opened"]).dt.date
+df_1m = df[df["Date Opened"] >= one_month_ago]
+print(f'df_1m type:{type(df_1m)}, data:\n{df_1m}')
+
+
+
+
+
+process_summary(df_1m.copy(), out_file_spec)
+# process_summary(df.copy(), out_file_spec)
 
 
 calc_aggregate(results_dir)
