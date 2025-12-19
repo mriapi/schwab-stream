@@ -9,6 +9,10 @@ import sys
 from dotenv import load_dotenv
 import pandas as pd
 from datetime import datetime, timezone, timedelta
+
+import time  # standard time module
+from datetime import time as dt_time
+# from datetime import datetime, timezone, timedelta, time
 import pytz
 from tzlocal import get_localzone  # To get the local timezone
 import json
@@ -24,6 +28,9 @@ import signal
 import requests
 import meic_config
 import importlib
+import mri_schwab_lib
+
+
 
 
 
@@ -36,6 +43,9 @@ meic_times = meic_config.config_meic_times
 
 live_trading_flag = True
 live_trading_flag = meic_config.config_live_trading_flag
+
+max_meic_contracts = meic_config.MAX_CONTRACTS
+multiple_meic_contracts_flag = meic_config.MULTIPLE_CONTRACTS_FLAG
 
 
 no_trade_dates = [
@@ -64,11 +74,15 @@ no_trade_dates = meic_config.config_no_trade_dates
 
 def update_meic_config():
     global meic_times, live_trading_flag, no_trade_dates, entry_times
+    global max_meic_contracts, multiple_meic_contracts_flag
 
     importlib.reload(meic_config)
     meic_times = meic_config.config_meic_times
     live_trading_flag = meic_config.config_live_trading_flag
     no_trade_dates = meic_config.config_no_trade_dates
+
+    max_meic_contracts = meic_config.MAX_CONTRACTS
+    multiple_meic_contracts_flag = meic_config.MULTIPLE_CONTRACTS_FLAG
 
     entry_times = None
     entry_times = [datetime.strptime(t, "%H:%M").time() for t in meic_times]
@@ -498,7 +512,7 @@ def wait_for_rx_credentials():
 
         else:
             time.sleep(1)
-            print("rx_ credentials not initialized yet")
+            # print("rx_ credentials not initialized yet")
             mqtt_client.publish(CREDS_REQUEST_TOPIC, " ")
 
 
@@ -740,6 +754,167 @@ def display_syms_only(option_list):
         return
 
 
+def get_contract_quantity(call_short, call_long, put_short, put_long):
+
+    update_meic_config()
+
+    returnVal = 1
+    last_time_flag = False
+
+    # print(f'4902 call_short type{type(call_short)}, value:{call_short}')
+
+    call_short_strike_int = int(call_short[0]['STRIKE'])
+    call_long_strike_int = int(call_long[0]['STRIKE'])
+    call_width = abs(call_short_strike_int - call_long_strike_int)
+    put_short_strike_int = int(put_short[0]['STRIKE'])
+    put_long_strike_int = int(put_long[0]['STRIKE'])
+    put_width = abs(put_short_strike_int - put_long_strike_int)
+    higher_width = max(call_width, put_width)
+
+    # print(f'40050 call_short_strike:{call_short_strike_int}')
+    # print(f'40051 call_long_strike:{call_long_strike_int}')
+    # print(f'40052 call_width:{call_width}')
+
+    # print(f'40060 put_short_strike:{put_short_strike_int}')
+    # print(f'40061 put_long_strike:{put_long_strike_int}')
+    # print(f'40062 put_width:{put_width}')
+
+    # print(f'40070 higher_width:{higher_width}')
+
+
+
+
+    myBuyingPower, currentAvailble = mri_schwab_lib.get_option_buying_power()
+
+    meic_times = meic_config.config_meic_times  # List of "HH:MM" strings in Eastern Time
+
+    # print(f'meic_times type:{type(meic_times)}, data:{meic_times}')
+
+    # Convert strings to datetime.time objects
+    # eastern_times = [time.fromisoformat(t) for t in meic_times]
+    eastern_times = [dt_time.fromisoformat(t) for t in meic_times]
+
+    # Get current time in Pacific Time
+    pacific = pytz.timezone("US/Pacific")
+    eastern = pytz.timezone("US/Eastern")
+    now_pacific = datetime.now(pacific)
+
+    # Convert to Eastern Time
+    now_eastern = now_pacific.astimezone(eastern)
+    current_eastern_time = now_eastern.time()
+
+    # Count passed and remaining times
+    passed_times = sum(1 for t in eastern_times if t < current_eastern_time)
+    remaining = len(eastern_times) - passed_times
+
+
+    # Format current Eastern time as "HH:MM"
+    current_time_str = now_eastern.strftime("%H:%M")
+
+    # Check for match
+    if current_time_str in meic_times:
+        index = meic_times.index(current_time_str)
+        print(f"Current time matches meic_times at index {index}, bumping remaining to include the current/passed time")
+        remaining += 1
+        passed_times -= 1
+
+
+         # Check if it's the last item
+        if index == len(meic_times) - 1:
+            print("✅ This is the last scheduled time in meic_times.")
+            last_time_flag = True
+        else:
+            print("⏭️ There are still future times remaining in meic_times.")
+            last_time_flag = False
+
+
+
+
+    else:
+        print("Current time does not match any entry in meic_times.")
+
+
+
+
+
+
+
+
+    if remaining > 0 and currentAvailble is not None:
+            availble_per_remaining = currentAvailble / remaining
+    else:
+        return returnVal
+
+    if remaining > 0 and myBuyingPower is not None:
+        bp_per_remaining = myBuyingPower / remaining
+    
+    else:
+        # bp_per_remaining = myBuyingPower
+        return returnVal
+    
+
+
+
+    bp_for_entry = min(availble_per_remaining, bp_per_remaining)
+    
+    if last_time_flag is True:
+        bp_schwab_factor = 1.30
+    else:
+        bp_schwab_factor = 1.05
+
+    # bp_schwab_factor = 1.03 # FIX ME
+
+
+    bp_to_be_used_per_contract = (higher_width * bp_schwab_factor) * 100
+    # num_contracts = bp_for_entry / bp_to_be_used_per_contract
+    num_contracts = int(math.floor(bp_for_entry / bp_to_be_used_per_contract))
+
+
+
+    # Output results
+    total_times = len(eastern_times)
+    # print(f"Total times: {total_times}")
+    # print(f"Passed times: {passed_times}")
+    # print(f"Remaining times: {remaining}")
+
+    # print(f'Entry times:: total:{total_times}, passed:{passed_times} remaing:{remaining}')
+    info_str = f'Entry times:: total:{total_times}, passed:{passed_times} remaing:{remaining}'
+    print(info_str)
+    persist_string(info_str)
+
+
+    # print(f'cash available:{currentAvailble:.2f}, bp:{myBuyingPower:.2f}')
+    # print(f'cash availble per entry for remining entry times:{availble_per_remaining:.2f}')
+
+    # print(f'per entry buying power for remaining entries:{bp_per_remaining:.2f}')
+    info_str = f'\nPer entry buying power for remaining entries:{bp_per_remaining:.2f}'
+    print(info_str)
+    persist_string(info_str)
+
+
+    # print(f'60010 bp_for_entry:{bp_for_entry:.2f}')
+    # print(f'60012 bp_to_be_used_per_contract for these spreads:{bp_to_be_used_per_contract:.2f}')
+
+    # print(f'60013 calculated num_contracts:{num_contracts}')
+    info_str = f'calculated num_contracts:{num_contracts}'
+    print(info_str)
+    persist_string(info_str)
+
+    returnVal = int(num_contracts)
+    if returnVal > max_meic_contracts:
+        # print(f'60040 calculated num_contracts was higher than max_meic_contracts')
+        returnVal = max_meic_contracts
+        # print(f'60041 adjusted num_contracts:{returnVal}')
+        info_str = f'adjusted num_contracts:{returnVal}'
+        print(info_str)
+        persist_string(info_str)
+
+
+
+    return returnVal
+
+
+
 IS_OPEN_OPEN_OFFSET = 2
 
 
@@ -843,7 +1018,7 @@ def process_message():
 
             if (spx_chain is not None) and (chain_quotes is not None):
 
-                print(f'MEIC: got spx_chain and chain_quotes')
+                # print(f'MEIC: got spx_chain and chain_quotes')
                 # print(f'2 spx_chain type:{type(spx_chain)}, data:\n{spx_chain}')
                 # print(f'2 chain_quotes type:{type(chain_quotes)}, data:\n{chain_quotes}')
                 # print(f'mqtt payload_stripped type:{type(payload_stripped)}, data:\n{payload_stripped}')
@@ -877,13 +1052,15 @@ def process_message():
             # Print the elapsed time in milliseconds
             display_str= f'\n=================================='
             persist_string(display_str)
-            # display_str = f'meic: checking for entry at {current_time} Pacific Time.  Elapsed grid request/response time: {elapsed_milliseconds} mS'
-            display_str = f'meic: checking for entry at {current_time} Pacific Time'
-            print(display_str)
-            persist_string(display_str)
+
+            # display_str = f'meic: checking for entry at {current_time} Pacific Time'
+            # print(display_str)
+            # persist_string(display_str)
+
+
             # show_pacific_times(entry_times)
 
-            display_str = f'current processed times:{processed_times}'
+            display_str = f'previously processed entries:{processed_times}'
             print(display_str)
             persist_string(display_str)
 
@@ -996,6 +1173,17 @@ def process_message():
             # print(f'put short:{put_short}')
             # print(f'put long:{put_long}')
             # print(f'target credit:{target_credit}')
+
+            multi_contract_qty = get_contract_quantity(
+                                    call_short, call_long, put_short, put_long)
+            
+
+            
+            
+            # print(f'multi-contract quantity for this entry time:{multi_contract_qty}')
+            info_str = f'multi-contract quantity for this entry time:{multi_contract_qty}\n'
+            print(info_str)
+            persist_string(info_str)
 
                 
 
@@ -1239,8 +1427,15 @@ def process_message():
 
                                 # print()
 
+                                
 
+                                
+                                # contract_qty = 2
+                                contract_qty = multi_contract_qty
+                                if contract_qty > max_meic_contracts:
+                                    contract_qty = max_meic_contracts
 
+                            
 
 
                                 # enter IC by placing separate order for the full IX
@@ -1252,7 +1447,7 @@ def process_message():
                                         call_long,  
                                         put_short, 
                                         put_long, 
-                                        1 # quantity of contracts
+                                        contract_qty # quantity of contracts
                                         )
                                 
                                 if live_trading_flag:
@@ -1334,7 +1529,7 @@ def process_message():
 
 
             print()
-            atm_string = f'SPX:{spx_price:.2f}, ATM straddle:{atm_straddle:.2f}, credit target:{target_credit:.2f}'
+            atm_string = f'SPX:{spx_price:.2f}, ATM straddle:{atm_straddle:.2f}, target credit:{target_credit:.2f}'
             print(atm_string)
             persist_string(atm_string)
 
@@ -1346,12 +1541,11 @@ def process_message():
             display_spread("Call", call_spread)
             display_spread(" Put", put_spread)
 
+            # info_string = f'multi_contract_qty:{multi_contract_qty}'
+            # print(info_string)
+            # persist_string(info_string)
 
 
-
-
-
-            
             
  
             pass
