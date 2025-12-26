@@ -3,6 +3,9 @@ from dotenv import load_dotenv
 import os
 import smtplib
 from email.message import EmailMessage
+from datetime import date
+
+
 
 
 
@@ -31,27 +34,48 @@ print(f'2 gmail_passcode: {gmail_passcode}')
 
 
 
-result = subprocess.run(
-    ["node", "test_js_1.js"],
+result_getLogs = subprocess.run(
+    ["python", "getLogs.py"],
     capture_output=True,
     text=True
 )
 
-print("STDOUT:", result.stdout)
-print("STDERR:", result.stderr)
-
-# Save STDOUT to a file
-with open("test_result_std.txt", "w", encoding="utf-8") as f:
-    f.write(result.stdout)
+print("getLogs output:", result_getLogs.stdout)
+if len(result_getLogs.stderr) > 0:
+    print("getLogs STDERR:", result_getLogs.stderr)
 
 
-# receiver_email = "misaacsonhdward@gmail.com"
-receiver_email = "mnmisaacson@gmail.com"
+
+result_genLogs = subprocess.run(
+    ["node", "genLogs.js"],
+    capture_output=True,
+    text=True
+)
+
+print("genLogs output:", result_genLogs.stdout)
+if len(result_genLogs.stderr) > 0:
+    print("genLogs STDERR:", result_genLogs.stderr)
+
+
+
+
+# # Save STDOUT to a file
+# with open("test_result_std.txt", "w", encoding="utf-8") as f:
+#     f.write(result.stdout)
+
+
+# receiver_email = "mri1700@gmail.com"
+receiver_email = ["mri1700@gmail.com", "rudy.isaacson@gmail.com", "scottike@gmail.com"]
+
+today = date.today()
+subject_str = f"MarkBot MEIC results for {today.strftime('%Y-%m-%d')}"
+
 
 # Create the email
 msg = EmailMessage()
-msg.set_content("To Mary -- ILY -- from Mark")
-msg['Subject'] = "Test email from my program"
+# msg.set_content("Daily results test")
+msg.set_content(result_genLogs.stdout)
+msg['Subject'] = subject_str
 msg['From'] = gmail_user
 msg['To'] = receiver_email
 

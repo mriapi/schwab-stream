@@ -58,16 +58,16 @@ function getOrders() {
     // const ordersFile = SPX_HOME + '/' + DATE + '/transactions/orders-' + DATE + '.json'
 
     const ordersFile = SPX_HOME + "\\" + DATE + "\\" + "orders.json"
-    console.log("updated ordersFile:<" + ordersFile + ">")
+    // console.log("updated ordersFile:<" + ordersFile + ">")
 
     try {
         const fileData = fs.readFileSync(ordersFile, 'utf8')
         const data = JSON.parse(fileData)
         data.forEach((_o) => {
-            console.log("displaying _o:" + _o)
+            // console.log("displaying _o:" + _o)
             processOrder(_o)
         })
-        console.log("orders file processing successful")
+        // console.log("orders file processing successful")
 
     } catch (err) {
         console.log("No Orders")
@@ -82,7 +82,7 @@ function getTransactions() {
     // const transFile = SPX_HOME + '/' + DATE + '/transactions/transactions-' + DATE + '.json'
 
     const transFile = SPX_HOME + "\\" + DATE + "\\" + "transactions.json"
-    console.log("updated transFile:<" + transFile + ">")
+    // console.log("updated transFile:<" + transFile + ">")
 
 
 
@@ -121,7 +121,8 @@ function processITMs() {
         }
 
     } catch (err) {
-        console.log("No SPX CLOSE data")
+        // console.log("No SPX CLOSE data")
+        console.log("")
     }
 
      if (SPX_CLOSE) {
@@ -187,7 +188,7 @@ function getOpts() {
         const mm = String(now.getMonth() + 1).padStart(2, '0');
         const dd = String(now.getDate()).padStart(2, '0');
         DATE = `${yyyy}-${mm}-${dd}`;
-        console.log('Defaulting to current Date: ' + DATE);
+        // console.log('Defaulting to current Date: ' + DATE);
     }
 
     OUTPUT_TYPE = 'TEXT';
@@ -1043,7 +1044,7 @@ function getFilesInRecommendationsDirectory() {
         // let dirPath = SPX_HOME + '/' + DATE + '/omeic/tos/recommendations'
 
         let dirPath = SPX_HOME + "\\" + DATE
-        console.log("updated dirPath:<" + dirPath + ">")
+        // console.log("updated dirPath:<" + dirPath + ">")
 
 
 
@@ -1072,7 +1073,8 @@ function printResults() {
     let losers = 0
     let bes = 0
 
-    console.log('\nTOS Live MEIC Results for ' + DATE + ': ')
+    // console.log('\nMarks TOS Live MEIC Results for ' + DATE + ': ')
+    console.log("MarkBot TOS Live MEIC Results for " + DATE + ": ")
     for (let i = ics.length - 1; i >= 0; i--) {
 
         let ic = ics[i]
