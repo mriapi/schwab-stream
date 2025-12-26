@@ -5,6 +5,7 @@ from paho.mqtt.enums import CallbackAPIVersion
 import paho.mqtt.client as mqtt
 import time
 import os
+import subprocess
 import sys
 from dotenv import load_dotenv
 import pandas as pd
@@ -110,6 +111,7 @@ global gbl_market_open_flag
 gbl_market_open_flag = False
 
 trade_today_flag = False
+reported_results = False
 
 
 spx_chain = None
@@ -321,9 +323,13 @@ def initialize_globals():
     global processed_times
     global positions_df
     global gbl_short_positions, gbl_long_positions
+    global trade_today_flag
+
     
     requested_grid_time = None
     requested_grid_flag = False
+    trade_today_flag = False
+
 
     update_meic_config()
 
@@ -1890,6 +1896,7 @@ def meic_entry():
     global requested_grid_time, requested_grid_flag
 
     global spx_chain, chain_quotes
+    global reported_results
 
 
     # outer meic loop
@@ -1910,6 +1917,40 @@ def meic_entry():
             market_open_wait_cnt += 1
             if market_open_wait_cnt % 12 == 11:
                 current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
+
+
+                check_trading_day()
+
+                if trade_today_flag is True:
+
+                    current_time_obj = datetime.strptime(current_eastern_hhmmss, '%H:%M:%S').time()
+
+                    # Define the threshold time
+                    results_report_time_start = dt_time(16, 5, 0)
+                    results_report_time_end = dt_time(16, 6, 59)
+
+                    # Compare
+                    if current_time_obj >= results_report_time_start and current_time_obj <= results_report_time_end:
+                        # print("Current time is equal to or later than 16:05:00 Eastern")
+                        if reported_results is False:
+
+                            print(f'We need to report daily results')
+                            daily_results_email = subprocess.run(
+                                ["python", "daily_results.py"],
+                                capture_output=True,
+                                text=True
+                            )
+
+                            print("daily results output:", daily_results_email.stdout)
+
+
+                            reported_results = True
+                    else:
+                        # print("Current time is earlier than 16:05:00 Eastern")
+                        reported_results = False
+
+                else:
+                    print("9204 today is not a trading day")
 
                 print(f'\nmeic: market not open, easten time:{current_eastern_hhmmss}, initializing globals')
                 initialize_globals()
