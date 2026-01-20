@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import os
 import webbrowser
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 import time
 import sys
 import threading
@@ -14,6 +14,9 @@ from paho.mqtt.enums import CallbackAPIVersion
 
 
 import market_open
+
+import smtplib
+from email.message import EmailMessage
 
 
 
@@ -63,7 +66,8 @@ new_access_token_flag = False
 
 
 
-
+my_gmail_user = None
+my_gmail_passcode = None
 
 
 
@@ -72,6 +76,7 @@ new_access_token_flag = False
 def load_env_variables():
     global mri_tokens_file
     global mri_acct_file
+    global my_gmail_user, my_gmail_passcode
     
     # parent_dir = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
     # env_file_path = os.path.join(parent_dir, '.env')
@@ -85,8 +90,15 @@ def load_env_variables():
     mri_tokens_file  = os.getenv('MRI_TOKENS_FILE_PATH')
     mri_acct_file  = os.getenv('MRI_ACCT_FILE_PATH')
 
-    print(f'my_local_app_key: {my_app_key}, my_local_secret_key: {my_secret_key}')
-    print(f'tokens_file type: {type(tokens_file)}, value: {tokens_file}')
+    # print(f'my_local_app_key: {my_app_key}, my_local_secret_key: {my_secret_key}')
+    # print(f'tokens_file type: {type(tokens_file)}, value: {tokens_file}')
+
+
+    my_gmail_user = os.getenv('GMAIL_USER')
+    my_gmail_passcode = os.getenv('GMAIL_APP_PASSCODE')
+
+    # print(f'tm my_gmail_user: {my_gmail_user}')
+    # print(f'tm my_gmail_passcode: {my_gmail_passcode}')
 
     return my_app_key, my_secret_key, my_tokens_file
 
@@ -360,9 +372,11 @@ def refresh_token_minutes_left(token_file_data):
 
 
 
+EMAIL_TIME_STR_1 = "22:33"
+EMAIL_TIME_STR_2 = "22:44"
 
-
-
+report_token_warning_time = None
+prev_token_warning_time = None
 
 def extract_tokens_mri(token_data):
     global access_token_issue_date, refresh_token_issue_date
@@ -370,6 +384,7 @@ def extract_tokens_mri(token_data):
     global refresh_token, access_token, id_token
     global transpired_access_minutes, transpired_refresh_minutes
     global refresh_minutes_left, access_minutes_left
+    global report_token_warning_time, prev_token_warning_time
 
 
     # print(f'mri_tokens_file:{mri_tokens_file}')
@@ -413,7 +428,7 @@ def extract_tokens_mri(token_data):
         refresh_minutes_left = MINUTES_IN_A_WEEK - transpired_refresh_minutes 
         refresh_days_left = refresh_minutes_left/1440
 
-        print(f'transpired_refresh_minutes:{transpired_refresh_minutes}, minutes left:{refresh_minutes_left}, days_left:{refresh_days_left:.2f}')
+        # print(f'transpired_refresh_minutes:{transpired_refresh_minutes}, minutes left:{refresh_minutes_left}, days_left:{refresh_days_left:.2f}')
 
         # print(f'access_token_issue_date:{access_token_issue_date}')
         access_dt = datetime.fromisoformat(access_token_issue_date)
@@ -575,14 +590,82 @@ def extract_tokens_mri(token_data):
 
     current_time = datetime.now()
     current_time_str = current_time.strftime('%H:%M:%S')
+    current_date_str = current_time.strftime('%m/%d/%y')
+    report_token_warning_time = current_time.strftime('%H:%M')
+    current_time_seconds_str = current_time.strftime('%S')
 
-    print(f'\n>>>>>>>> manage_tokens.py <<<<<<<<')
-    print(f'Token data loaded at {current_time_str}')
+    print(f'\n>>>>>>>> manage_tokens.py {current_date_str} {current_time_str} Pacific <<<<<<<<')
+    print(f'refresh_days_left: {refresh_days_left}, report_token_warning_time:{report_token_warning_time}')
+    
+    if refresh_days_left < 3:
+        print(f'!!!!!!! days left is < 3')
+
+    
+    
+    
+    
+    
+    
+    # print(f'Token data loaded at {current_time_str}')
     print(f"Transpired access minutes: {transpired_access_minutes}")
     print(f"access_minutes_left: {access_minutes_left}")
     print(f"Transpired refresh minutes: {transpired_refresh_minutes}")
-    print(f"refresh_minutes_left: {refresh_minutes_left} ({refresh_days_left:.2f} days)")
-    # print(f"current local time: {current_time_str}")
+
+    info_str = f'refresh_minutes_left: {refresh_minutes_left} ({refresh_days_left:.2f} days)'
+    # print(f"refresh_minutes_left: {refresh_minutes_left} ({refresh_days_left:.2f} days)")
+    print(f'{info_str}')
+
+
+    prev_token_warning_time = report_token_warning_time
+
+    print(f'report_token_warning_time:{report_token_warning_time}')
+
+    # if refresh_days_left < 8 and report_token_warning_time == "00:54":
+    # if refresh_days_left < 3 and (report_token_warning_time == "22:22" or report_token_warning_time == "22:23"):
+    if (
+        refresh_days_left < 3 and
+        (
+            # report_token_warning_time == "22:22" or
+            # report_token_warning_time == "22:23"
+
+            report_token_warning_time == EMAIL_TIME_STR_1 or
+            report_token_warning_time == EMAIL_TIME_STR_2
+        )
+    ):
+
+
+        info_str = f'refresh token expires in {refresh_days_left:.2f} days !!!'
+        print(f'1 {info_str}')
+
+        receiver_email = "mri1700@gmail.com"
+
+        # subject_str = f" {current_time_str}"
+
+        # Create the email
+        msg = EmailMessage()
+        # msg.set_content("Daily results test")
+        msg.set_content(info_str)
+        # msg['Subject'] = subject_str
+        msg['Subject'] = info_str
+        msg['From'] = my_gmail_user
+        msg['To'] = receiver_email
+
+        try:
+            # Send the email using Gmail's SMTP server
+            with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+                smtp.login(my_gmail_user, my_gmail_passcode)
+                smtp.send_message(msg)
+            print("refresh Email sent successfully!")
+        except Exception as e:
+            print(f"Failed to send email: {e}")
+
+        pass
+
+
+
+
+
+
 
 
 
@@ -881,6 +964,8 @@ def get_tokens():
 
     appKey, appSecret, tokensFile = load_env_variables()
 
+    # print(f'mt1 my_gmail_user:{my_gmail_user}, my_gmail_passcode:{my_gmail_passcode}')
+
 
     try:
 
@@ -894,9 +979,11 @@ def get_tokens():
         # print(f'token_file_data type:{type(token_file_data)}, data:\n{token_file_data}')
 
 
-        print(f'calling refresh_token_minutes_left()')
+        # print(f'calling refresh_token_minutes_left()')
         refresh_minutes_left = refresh_token_minutes_left(token_file_data)
-        print(f'my_refresh_minutes_left:{refresh_minutes_left}')
+        # print(f'my_refresh_minutes_left:{refresh_minutes_left}')
+
+
 
         if refresh_minutes_left < 1:
             refresh_expired_flag = True
@@ -946,9 +1033,10 @@ def get_tokens():
 
     all_initialized_flag = all_tokens_initialized()
     if all_initialized_flag == True:
-        print(f'all tokens have been initialized')
+        # print(f'all tokens have been initialized')
+        pass
     else:
-        print(f'NOT all tokens have been initialized')
+        print(f'tokens HAVE NOT all been initialized')
 
 
 
@@ -969,15 +1057,72 @@ def get_tokens():
 
 
     if refresh_days_left < 0 and arg_one != "refresh":
-        print(f'\n\n!!!!!!!!! refresh token has expired: {refresh_days_left:.1f} days')
-        print(f'!!!!!!!!! Exiting. Re-run the program with "refresh" parameter:\n    python manage_tokens.py refresh\n')
+        current_time = datetime.now()
+        current_time_str = current_time.strftime('%H:%M:%S')
+        current_date_str = current_time.strftime('%m/%d/%y')
 
-        os._exit(1)
+        report_token_warning_time = current_time.strftime('%H:%M')
 
 
 
 
-    if refresh_days_left < 1:
+
+        print(f'\n\n!!!!!!!!! {current_date_str} {current_time_str} refresh token has expired: {refresh_days_left:.1f} days')
+
+        if (
+
+            # report_token_warning_time == "22:22" or
+            # report_token_warning_time == "22:23"
+
+            report_token_warning_time == EMAIL_TIME_STR_1 or
+            report_token_warning_time == EMAIL_TIME_STR_2
+        ):
+            
+
+            info_str = f'!!!!! refresh token has EXPIRED !!!!!'
+            print(f'2 {info_str}')
+
+            receiver_email = "mri1700@gmail.com"
+
+            # subject_str = f" {current_time_str}"
+
+            # Create the email
+            msg = EmailMessage()
+            # msg.set_content("Daily results test")
+            msg.set_content(info_str)
+            # msg['Subject'] = subject_str
+            msg['Subject'] = info_str
+            msg['From'] = my_gmail_user
+            msg['To'] = receiver_email
+
+            try:
+                # Send the email using Gmail's SMTP server
+                with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+                    smtp.login(my_gmail_user, my_gmail_passcode)
+                    smtp.send_message(msg)
+                print("expired refresh Email sent successfully!")
+            except Exception as e:
+                print(f"expired refresh email Failed to send: {e}")
+
+
+
+
+
+            
+
+
+
+        # print(f'!!!!!!!!! Exiting. Re-run the program with "refresh" parameter:\n    python manage_tokens.py refresh\n')
+
+        # FIXME FIX ME
+        # os._exit(1)
+        return
+
+
+
+
+
+    if refresh_days_left < 2:
         print(f'!!!!!!!!! WARNING !!!!!!!!!! refresh token expires in {refresh_days_left:.1f} days')
 
 
