@@ -129,28 +129,48 @@ def refresh_expiration_days():
     days_until_refresh_expires = 7 - days_since_refresh
     return days_until_refresh_expires
 
-def is_nyse_open_today():
 
-    # Get NYSE trading calendar
-    nyse = mcal.get_calendar("NYSE")
-    # print(f'mo: nyse type:{type(nyse)}')
+# def is_nyse_open_today():
 
-    # Get today's date and check the nyse schedule
-    today = datetime.today().strftime("%Y-%m-%d")
-    # print(f'mo: today type:{type(today)}')
+#     # Get NYSE trading calendar
+#     nyse = mcal.get_calendar("NYSE")
+#     # print(f'mo: nyse type:{type(nyse)}')
 
-    schedule = nyse.schedule(start_date=today, end_date=today)
-    # print(f'mo: schedule type:{type(schedule)}')
+#     # Get today's date and check the nyse schedule
+#     today = datetime.today().strftime("%Y-%m-%d")
+#     # print(f'mo: today type:{type(today)}')
 
-    # # Get tomorrow's date and check the nyse schedule
-    # tomorrow = (datetime.today() + timedelta(days=1)).strftime("%Y-%m-%d")
-    # schedule = nyse.schedule(start_date=tomorrow, end_date=tomorrow)
+#     schedule = nyse.schedule(start_date=today, end_date=today)
+#     # print(f'mo: schedule type:{type(schedule)}')
+
+#     # # Get tomorrow's date and check the nyse schedule
+#     # tomorrow = (datetime.today() + timedelta(days=1)).strftime("%Y-%m-%d")
+#     # schedule = nyse.schedule(start_date=tomorrow, end_date=tomorrow)
 
     
-    is_open = not schedule.empty
+#     is_open = not schedule.empty
 
-    # print(f"NYSE is_open today? {is_open}") 
-    return is_open   
+#     # print(f"NYSE is_open today? {is_open}") 
+#     return is_open   
+
+
+
+
+
+def is_nyse_open_today():
+    nyse = mcal.get_calendar("NYSE")
+    today = datetime.today().date()  # Use date object directly
+    schedule = nyse.schedule(start_date=today, end_date=today)
+    return not schedule.empty
+
+
+
+
+
+
+
+
+
 
 
 

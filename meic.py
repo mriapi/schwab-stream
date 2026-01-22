@@ -1070,7 +1070,7 @@ def process_message():
             print(display_str)
             persist_string(display_str)
 
-            print()
+            # print()
 
 
             if not gbl_short_positions:
@@ -1340,7 +1340,7 @@ def process_message():
                 today_str = datetime.today().strftime("%#m/%#d/%y")
 
                 if not trade_today_flag:
-                    print(f'today, {today_str}, is NOT NOT NOT NOT a trading day.  entry times will not be checked')
+                    print(f'today, {today_str}, is NOT a trading day.  entry times will not be checked')
 
 
                 else:
@@ -1678,9 +1678,9 @@ def check_trading_day():
         if is_weekend_day:
             day_message = "is a weekend day"
         elif is_no_trade_day:
-            day_message = "is a blackout day"
+            day_message = "is a BLACKOUT day"
 
-        print(f'today, {today_str}, {day_message},  trade_today_flag:{trade_today_flag}')
+        print(f'today, {today_str}, {day_message}')
 
     else:
         trade_today_flag = True
@@ -1952,15 +1952,15 @@ def meic_entry():
                 else:
                     print("9204 today is not a trading day")
 
-                print(f'\nmeic: market not open, easten time:{current_eastern_hhmmss}, initializing globals')
+                print(f'\nmeic: market not open, easten time:{current_eastern_hhmmss}')
                 initialize_globals()
 
                 # show_times_raw(entry_times)
 
                 if live_trading_flag:
-                    info_str = " !!!! LIVE LIVE LIVE !!!! "
+                    info_str = " live "
                 else:
-                    info_str = "  ~~~ paper ~~~  "
+                    info_str = "  ~~~ PAPER ~~~  "
 
                 update_meic_config()
 
@@ -2108,7 +2108,8 @@ def meic_entry():
             
                 print(f'\n==============================================================================')
                 # print(f'1 Requesting SPX grid data at {now_time_str }')
-                print(f'MEIC entry check at {now_time_str } Pacific')
+                mo_flag = market_open.is_nyse_open_today()
+                print(f'MEIC entry check at {now_time_str } Pacific. Market open?:{mo_flag}')
                 # publish_grid_request()
 
 
