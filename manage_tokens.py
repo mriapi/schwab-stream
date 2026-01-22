@@ -358,7 +358,7 @@ def refresh_token_minutes_left(token_file_data):
             transpired_refresh_minutes = int(time_delta.total_seconds() // 60)
 
             refresh_minutes_left = MINUTES_IN_A_WEEK - transpired_refresh_minutes 
-            days_left_fl = float(refresh_minutes_left / 1440)
+            days_left_fl = float(refresh_minutes_left / MINUTES_IN_A_DAY)
 
             # print(f'days_delta:{days_delta}, transpired_refresh_minutes:{transpired_refresh_minutes}')
             # print(f'refresh_minutes_left:{refresh_minutes_left}, days_left_fl{days_left_fl:.2f}')
@@ -426,7 +426,10 @@ def extract_tokens_mri(token_data):
         refresh_dt = datetime.fromisoformat(refresh_token_issue_date)
         transpired_refresh_minutes = (int)((now - refresh_dt).total_seconds() / 60)
         refresh_minutes_left = MINUTES_IN_A_WEEK - transpired_refresh_minutes 
-        refresh_days_left = refresh_minutes_left/1440
+        refresh_days_left = refresh_minutes_left/MINUTES_IN_A_DAY
+        # refresh_days_left -= 7
+
+        print(f'1 refresh_days_left:{refresh_days_left:.2f}')
 
         # print(f'transpired_refresh_minutes:{transpired_refresh_minutes}, minutes left:{refresh_minutes_left}, days_left:{refresh_days_left:.2f}')
 
@@ -582,7 +585,9 @@ def extract_tokens_mri(token_data):
             refresh_dt = datetime.fromisoformat(refresh_token_issue_date)
             transpired_refresh_minutes = (int)((now - refresh_dt).total_seconds() / 60)
             refresh_minutes_left = MINUTES_IN_A_WEEK - transpired_refresh_minutes 
-            refresh_days_left = refresh_minutes_left/1440
+            refresh_days_left = refresh_minutes_left/MINUTES_IN_A_DAY
+            # refresh_days_left -= 7
+            print(f'2 refresh_days_left:{refresh_days_left:.2f}')
 
     except Exception as e:
         print(f"130 Error getting issue datetime: {e}")
@@ -595,7 +600,7 @@ def extract_tokens_mri(token_data):
     current_time_seconds_str = current_time.strftime('%S')
 
     print(f'\n>>>>>>>> manage_tokens.py {current_date_str} {current_time_str} Pacific <<<<<<<<')
-    print(f'refresh_days_left: {refresh_days_left}, report_token_warning_time:{report_token_warning_time}')
+    print(f'refresh_days_left: {refresh_days_left:.2f}, report_token_warning_time:{report_token_warning_time}')
     
     if refresh_days_left < 3:
         print(f'!!!!!!! days left is < 3')
@@ -1051,9 +1056,13 @@ def get_tokens():
 
     if refresh_minutes_left == None:
         refresh_days_left = 0
+        print(f'22 refresh_minutes_left:{refresh_days_left:.2f}')
+        print(f'3 refresh_days_left:{refresh_days_left:.2f}')
 
     else:
         refresh_days_left = refresh_minutes_left/MINUTES_IN_A_DAY
+        # refresh_days_left -= 7
+        print(f'4 refresh_days_left:{refresh_days_left:.2f}')
 
 
     if refresh_days_left < 0 and arg_one != "refresh":

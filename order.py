@@ -650,13 +650,13 @@ def generate_order_STO_IC_with_triggers(
 
     cnc = call_net_credit
     cnc2x = (cnc) * 2
-    print(f'call short:{call_short_bid}, call long:{call_long_ask}, cnc:{cnc} *2:{cnc2x}')
+    print(f'call short:{call_short_bid:.2f}, call long:{call_long_ask:.2f}, cnc:{cnc:.2f} *2:{cnc2x:.2f}')
     clo = call_long_ask * long_leg_factor_adj
-    print(f'clo:{clo}, long factor adjusted:{long_leg_factor_adj}')
+    print(f'clo:{clo:.2f}, long factor adjusted:{long_leg_factor_adj:.2f}')
     cs100 = (cnc2x + clo) * 1.00
     print(f'cs100:{cs100:.2f}')
     cs_factored = (cnc2x + clo) * stop_loss_factor
-    print(f'cs_factored:{cs_factored:.2f}, factor:{stop_loss_factor}')
+    print(f'cs_factored:{cs_factored:.2f}, factor:{stop_loss_factor:.2f}')
     print(f'')
 
 
@@ -675,13 +675,13 @@ def generate_order_STO_IC_with_triggers(
 
     pnc = put_net_credit
     pnc2x = (pnc) *2
-    print(f'put short:{put_short_bid}, put long:{put_long_ask}, pnc:{pnc} *2:{pnc2x}')
+    print(f'put short:{put_short_bid:.2f}, put long:{put_long_ask:.2f}, pnc:{pnc:.2f} *2:{pnc2x:.2f}')
     plo = put_long_ask * long_leg_factor_adj
-    print(f'plo:{plo}, long factor adjusted:{long_leg_factor_adj}')
+    print(f'plo:{plo:.2f}, long factor adjusted:{long_leg_factor_adj:.2f}')
     ps100 = (pnc2x + plo) * 1.00
     print(f'ps100:{ps100:.2f}')
     ps_factored = (pnc2x + plo) * stop_loss_factor
-    print(f'ps_factored:{ps_factored:.2f}, factor:{stop_loss_factor}')
+    print(f'ps_factored:{ps_factored:.2f}, factor:{stop_loss_factor:.2f}')
     print(f'')
 
 
