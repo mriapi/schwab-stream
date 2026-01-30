@@ -429,7 +429,7 @@ def extract_tokens_mri(token_data):
         refresh_days_left = refresh_minutes_left/MINUTES_IN_A_DAY
         # refresh_days_left -= 7
 
-        print(f'1 refresh_days_left:{refresh_days_left:.2f}')
+        print(f'AA refresh_days_left:{refresh_days_left:.2f}')
 
         # print(f'transpired_refresh_minutes:{transpired_refresh_minutes}, minutes left:{refresh_minutes_left}, days_left:{refresh_days_left:.2f}')
 
@@ -587,7 +587,7 @@ def extract_tokens_mri(token_data):
             refresh_minutes_left = MINUTES_IN_A_WEEK - transpired_refresh_minutes 
             refresh_days_left = refresh_minutes_left/MINUTES_IN_A_DAY
             # refresh_days_left -= 7
-            print(f'2 refresh_days_left:{refresh_days_left:.2f}')
+            print(f'BB refresh_days_left:{refresh_days_left:.2f}')
 
     except Exception as e:
         print(f"130 Error getting issue datetime: {e}")
@@ -1057,12 +1057,12 @@ def get_tokens():
     if refresh_minutes_left == None:
         refresh_days_left = 0
         print(f'22 refresh_minutes_left:{refresh_days_left:.2f}')
-        print(f'3 refresh_days_left:{refresh_days_left:.2f}')
+        print(f'CC refresh_days_left:{refresh_days_left:.2f}')
 
     else:
         refresh_days_left = refresh_minutes_left/MINUTES_IN_A_DAY
         # refresh_days_left -= 7
-        print(f'4 refresh_days_left:{refresh_days_left:.2f}')
+        print(f'DD refresh_days_left:{refresh_days_left:.2f}')
 
 
     if refresh_days_left < 0 and arg_one != "refresh":

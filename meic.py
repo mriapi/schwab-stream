@@ -936,6 +936,8 @@ def process_message():
 
     global spx_chain, chain_quotes
 
+    check_balance_cnt = 0
+
     print(f'process message thread checking for market open')
     market_open_flag = False
     while not market_open_flag:
@@ -1567,8 +1569,556 @@ def process_message():
         
 
         # time.sleep(0.1)
+        check_balance_cnt += 1
+        if check_balance_cnt % 10 == 2:
+            check_short_stop_balance()
         time.sleep(1)
 
+
+
+
+
+def check_short_stop_balance():
+    try:
+
+
+        my_market_open = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=(-1) )
+        if my_market_open is False:
+            now_time = datetime.now()
+            now_time_str = now_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
+            print(f'\naborting check_short_stop_balance() because market is closed\n')
+            return
+
+
+        print(f'\n\n*********************************')
+        print(f'starting check_shorts_stops')
+
+
+
+        shorts_stops_qty = []
+        working_stops_list = []
+
+        get_shorts_qty_success = False
+        get_short_cnt = 0
+
+        while get_shorts_qty_success is False:
+            try:
+                now_time = datetime.now()
+                now_time_str = now_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
+
+                get_shorts_qty_success, shorts_stops_qty = positions.get_shorts_quantities()
+                print(f'shorts qty success:{get_shorts_qty_success}')
+                if get_shorts_qty_success is True:
+                    print(f'at {now_time_str}, shorts_qty type:{type(shorts_stops_qty)}, data:')
+                    print(json.dumps(shorts_stops_qty, indent=2))
+                    break
+                else:
+                    get_short_cnt += 1
+                    print(f'2957 get_shorts_quantities() failed, attempts:{get_short_cnt}')
+                    if get_short_cnt >= 5:
+                        print(f'2958 too many get_shorts_quantities() failed, attempts:{get_short_cnt}')
+                        break
+                    time.sleep(0.5)
+            except Exception as e:
+                print(f"Error during get_shorts_quantities loop: {e}")
+                break
+
+        try:
+            orders = get_recent_orders()
+            working_stops_list = get_stops_working(orders)
+            print(f'working_stops_list type{type(working_stops_list)}, data:')
+            print(json.dumps(working_stops_list, indent=2))
+        except Exception as e:
+            print(f"Error retrieving working stops: {e}")
+            working_stops_list = []
+
+        if not shorts_stops_qty:
+            print("shorts_stops_qty list is empty")
+        else:
+            print("shorts_stops_qty list is not empty")
+
+            try:
+                # Build a lookup dictionary for shorts_qty keyed by symbol
+                shorts_lookup = {item["symbol"]: item for item in shorts_stops_qty}
+
+                # Iterate through working_stops_list and update stop_qty
+                for stop in working_stops_list:
+                    symbol = stop.get("symbol")
+                    if symbol in shorts_lookup:
+                        current_stop_qty = shorts_lookup[symbol].get("stop_qty") or 0.0
+                        shorts_lookup[symbol]["stop_qty"] = current_stop_qty + stop.get("stop_working_qty", 0.0)
+
+                print(f'final shorts_stops_qty:')
+                print(json.dumps(shorts_stops_qty, indent=2))
+
+                for item in shorts_stops_qty:
+                    short_qty = item.get("short_qty")
+                    stop_qty = item.get("stop_qty")
+                    symbol = item.get("symbol")
+
+                    # Skip if either stop or short value is None or not a number
+                    if not isinstance(short_qty, (int, float)) or not isinstance(stop_qty, (int, float)):
+                        continue
+
+                    difference = short_qty - stop_qty
+                    diff_int = int(difference)
+                    short_qty_int = int(short_qty)
+                    stop_qty_int = int(stop_qty)
+
+                    if short_qty_int != stop_qty_int:
+                        print(f"short/stop for {symbol} is imbalanced, difference = {diff_int}")
+                        if difference > 0:
+                            print(f"{symbol} has more short contracts than stop orders by {diff_int} contracts")
+                        else:
+                            print(f"{symbol} has sufficient stop coverage")
+                    else:
+                        print(f"short/stop for {symbol} is balanced ({short_qty_int}) each")
+            except Exception as e:
+                print(f"Error processing shorts_stops_qty: {e}")
+
+        print(f'exiting check_shorts_stops')
+        print(f'\n\n*********************************')
+
+    except Exception as e:
+        print(f"Unexpected error in check_short_stop_balance: {e}")
+
+
+
+# def set_up_order_check():
+#     base_dir = BASE_ORDER_CHECK_DIR
+#     today_str = datetime.now().strftime("%Y-%m-%d")
+#     today_dir = os.path.join(base_dir, today_str)
+
+#     if not os.path.exists(base_dir):
+#         os.makedirs(base_dir)
+
+#     if not os.path.exists(today_dir):
+#         os.makedirs(today_dir)
+
+
+
+
+def get_recent_orders():
+    # start_of_date_dt = datetime.now(timezone.utc) - timedelta(minutes=10) 
+    # start_of_date_dt = datetime.now(timezone.utc) - timedelta(minutes=50) 
+    # end_of_date_dt = datetime.now(timezone.utc)  # now
+
+    # start_of_date_dt = datetime.now(timezone.utc) - timedelta(days=1) # yesterday
+    # end_of_date_dt = datetime.now(timezone.utc)
+
+    start_of_date_dt = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    end_of_date_dt = datetime.now(timezone.utc)
+
+    # print(f'start_of_date_dt type:{type(start_of_date_dt)}, value:{start_of_date_dt}')
+    # print(f'Local time: {start_of_date_dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")}')
+
+    # if isinstance(start_of_date_dt, datetime):
+    #     print("fromEnteredTime is a datetime instance.")
+    # else:
+    #     print("fromEnteredTime is NOT a datetime instance.")
+
+
+
+
+    orders = mri_schwab_lib.get_orders(start_of_date_dt, end_of_date_dt)
+    # print(f'recent orders, type:{type(orders)}, data:\n{orders}')
+    return orders
+    pass
+
+
+
+
+def get_stops_working(orders):
+
+    # print(f'in get_stops_working()')
+
+    stop_working = []
+
+
+
+
+
+
+    now_local = datetime.now().astimezone()
+
+    my_date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    my_date_day = datetime.now().strftime("%Y-%m-%d")
+    my_date_time = datetime.now().strftime("%H-%M-%S")
+
+    # my_file = f"{my_date_day}\\{my_date_time}.txt"
+    my_file = f"order_check_{my_date_time}.txt"
+
+    # info_str = f'----------- Get Order Data saved to {my_file} -----------'
+    # print(info_str)
+    # persist_order_check_str(my_file, info_str)
+
+    try:
+        for idx, order in enumerate(orders, start=1):
+            # # print(f"\n=== Order {idx} ===")
+            # info_str = f"\n=== Order {idx} ==="
+            # print(info_str)
+            # persist_order_check_str(my_file, info_str)
+
+            # # print(f"Order ID: {order.get('orderId')}")
+            # info_str = f"Order ID: {order.get('orderId')}"
+            # print(info_str)
+            # persist_order_check_str(my_file, info_str)
+
+            # # print(f"Status: {order.get('status')}")
+            # info_str = f"Status: {order.get('status')}"
+            # print(info_str)
+            # persist_order_check_str(my_file, info_str)
+
+            # # print(f"Type: {order.get('orderType')} | Strategy: {order.get('complexOrderStrategyType')}")
+            # info_str = f"Type: {order.get('orderType')} | Strategy: {order.get('complexOrderStrategyType')}"
+            # print(info_str)
+            # persist_order_check_str(my_file, info_str)
+
+
+
+            # # print(f"Quantity: {order.get('quantity')} | Filled: {order.get('filledQuantity')} | Remaining: {order.get('remainingQuantity')}")
+            # info_str = f"Quantity: {order.get('quantity')} | Filled: {order.get('filledQuantity')} | Remaining: {order.get('remainingQuantity')}"
+            # print(info_str)
+            # persist_order_check_str(my_file, info_str)
+
+            # # print(f"Price: {order.get('price')}")
+            # info_str = f"Price: {order.get('price')}"
+            # print(info_str)
+            # persist_order_check_str(my_file, info_str)
+
+
+            entered_utc_str = order.get('enteredTime')
+            # # print(f"Entered: {entered_utc_str}")
+            # info_str = f"Entered: {entered_utc_str}"
+            # print(info_str)
+            # persist_order_check_str(my_file, info_str)
+
+            try:
+                entered_utc_dt = datetime.strptime(entered_utc_str, "%Y-%m-%dT%H:%M:%S%z")
+                entered_local_dt = entered_utc_dt.astimezone()
+                minutes_elapsed = int((now_local - entered_local_dt).total_seconds() // 60)
+
+                # # print(f"Entered local time: {entered_local_dt.strftime('%H:%M:%S')} ({minutes_elapsed} minutes ago)")
+                # info_str = f"Entered local time: {entered_local_dt.strftime('%H:%M:%S')} ({minutes_elapsed} minutes ago)"
+                # print(info_str)
+
+
+
+            except Exception as e:
+                print(f"Entered local time: [Error parsing time: {e}]")
+                info_str = f"Entered local time: [Error parsing time: {e}]"
+                print(info_str)
+
+            # # print(f"Closed: {order.get('closeTime')}")
+            # info_str = f"Closed: {order.get('closeTime')}"
+            # print(info_str)
+
+
+
+            # # print(f"Account #: {order.get('accountNumber')}")
+            # info_str = f"Account #: {order.get('accountNumber')}"
+            # print(info_str)
+
+
+
+            # # print("Legs:")
+            # info_str = "Legs:"
+            # print(info_str)
+
+
+
+            for leg in order.get('orderLegCollection', []):
+                try:
+                    instr = leg.get('instrument', {})
+
+                    # # print(f"  - {leg.get('instruction')} {leg.get('quantity')} x {instr.get('description')} ({instr.get('putCall')})")
+                    # info_str = f"  - {leg.get('instruction')} {leg.get('quantity')} x {instr.get('description')} ({instr.get('putCall')})"
+                    # print(info_str)
+
+                except Exception as e:
+                    # print(f"  - [Error displaying leg: {e}]")
+                    info_str = f"  - [Error displaying leg: {e}]"
+                    print(info_str)
+
+            # print("Executions:")
+            for activity in order.get('orderActivityCollection', []):
+                try:
+
+                    # # print(f"  Activity ID: {activity.get('activityId')} | Type: {activity.get('executionType')} | Qty: {activity.get('quantity')}")
+                    # info_str = f"  Activity ID: {activity.get('activityId')} | Type: {activity.get('executionType')} | Qty: {activity.get('quantity')}"
+                    # print(info_str)
+
+                    for exec_leg in activity.get('executionLegs', []):
+
+                        # # print(f"    Leg {exec_leg.get('legId')}: Qty {exec_leg.get('quantity')} @ ${exec_leg.get('price')} on {exec_leg.get('time')}")
+                        # info_str = f"    Leg {exec_leg.get('legId')}: Qty {exec_leg.get('quantity')} @ ${exec_leg.get('price')} on {exec_leg.get('time')}"
+                        # print(info_str)
+                        pass
+
+                except Exception as e:
+                    # print(f"  [Error displaying execution activity: {e}]")
+                    info_str = f"  [Error displaying execution activity: {e}]"
+                    print(info_str)
+
+            # print("Child Order Strategies:")
+            for child in order.get('childOrderStrategies', []):
+                try:
+
+                    # # print(f"  - Order ID: {child.get('orderId')}")
+                    # info_str = f"  - Order ID: {child.get('orderId')}"
+                    # print(info_str)
+
+                    # # print(f"    Type: {child.get('orderType')}")
+                    # info_str = f"    Type: {child.get('orderType')}"
+                    # print(info_str)
+
+                    # # print(f"    Strategy: {child.get('orderStrategyType')}")
+                    # info_str = f"    Strategy: {child.get('orderStrategyType')}"
+                    # print(info_str)
+
+                    # # print(f"    Filled Quantity: {child.get('filledQuantity')}")
+                    # info_str = f"    Filled Quantity: {child.get('filledQuantity')}"
+                    # print(info_str)
+
+
+                    # # print(f"    Status: {child.get('status')}")
+                    # info_str = f"    Status: {child.get('status')}"
+                    # print(info_str)
+
+
+                    # if child.get('orderType') == 'STOP' and child.get('status') == 'WORKING':
+                    #     stop_working_qty = child.get('quantity')
+                    #     print(f'A    !!!!!!!!!! got child STOP WORKING, qty:{stop_working_qty}')
+
+
+                    # if child.get('orderType') == 'STOP' and child.get('status') == 'REJECTED':
+                    #     HandleRejectedStop(child.get('orderId'))
+
+                    entered_child_str = child.get('enteredTime')
+
+                    # # print(f"    Entered: {entered_child_str}")
+                    # info_str = f"    Entered: {entered_child_str}"
+                    # print(info_str)
+
+
+                    try:
+                        entered_child_dt = datetime.strptime(entered_child_str, "%Y-%m-%dT%H:%M:%S%z")
+                        entered_child_local = entered_child_dt.astimezone()
+                        minutes_elapsed = int((now_local - entered_child_local).total_seconds() // 60)
+
+                        # # print(f"    Entered local time: {entered_child_local.strftime('%H:%M:%S')} ({minutes_elapsed} minutes ago)")
+                        # info_str = f"    Entered local time: {entered_child_local.strftime('%H:%M:%S')} ({minutes_elapsed} minutes ago)"
+                        # print(info_str)
+
+                    except Exception as e:
+                        # print(f"    Entered local time: [Error parsing time: {e}]")
+                        info_str = f"    Entered local time: [Error parsing time: {e}]"
+                        print(info_str)
+
+
+                    # print(f"    Symbols:")
+
+                    for leg in child.get('orderLegCollection', []):
+                        try:
+                            symbol = leg.get('instrument', {}).get('symbol')
+
+                            # # print(f"      - {symbol}")
+                            # info_str = f"      - {symbol}"
+                            # print(info_str)
+
+                            if child.get('orderType') == 'STOP' and child.get('status') == 'WORKING':
+                                
+                                stop_working_qty = child.get('quantity')
+                                # print(f'C    !!!!!!!!!! got child STOP WORKING, symbol:{symbol}, qty:{stop_working_qty}')
+
+                                # Add dictionary to the stop_working list
+                                stop_working.append({
+                                    "symbol": symbol,
+                                    "stop_working_qty": stop_working_qty
+                                })
+
+
+                        except Exception as e:
+                            # print(f"      - [Error displaying symbol: {e}]")
+                            info_str = f"      - [Error displaying symbol: {e}]"
+                            print(info_str)
+
+                    if 'childOrderStrategies' in child:
+                        # print("    Secondary Child Order Strategies:")
+                        for subchild in child['childOrderStrategies']:
+                            try:
+
+                                # # print(f"      - Order ID: {subchild.get('orderId')}")
+                                # info_str = f"      - Order ID: {subchild.get('orderId')}"
+                                # print(info_str)
+
+                                # # print(f"        Type: {subchild.get('orderType')}")
+                                # info_str = f"        Type: {subchild.get('orderType')}"
+                                # print(info_str)
+
+                                # print(f"        Filled Quantity: {subchild.get('filledQuantity')}")
+                                # info_str = f"        Filled Quantity: {subchild.get('filledQuantity')}"
+                                # print(info_str)
+
+                                # # print(f"        Status: {subchild.get('status')}")
+                                # info_str = f"        Status: {subchild.get('status')}"
+                                # print(info_str)
+
+                                # # print(f"        Legs:")
+                                # info_str = f"        Legs:"
+                                # print(info_str)
+
+
+                                for leg in subchild.get('orderLegCollection', []):
+                                    instr = leg.get('instrument', {})
+
+                                    # print(f"          - Symbol: {instr.get('symbol')}, Instruction: {leg.get('instruction')}")
+                                    # info_str = f"          - Symbol: {instr.get('symbol')}, Instruction: {leg.get('instruction')}"
+                                    # print(info_str)
+
+                            except Exception as e:
+                                # print(f"      - [Error displaying secondary child order: {e}]")
+                                info_str = f"      - [Error displaying secondary child order: {e}]"
+                                print(info_str)
+
+                except Exception as e:
+                    # print(f"  - [Error displaying child order strategy: {e}]")
+                    info_str = f"  - [Error displaying child order strategy: {e}]"
+                    print(info_str)
+
+    except Exception as e:
+        # print(f"[Unhandled error while displaying orders: {e}]")
+        info_str = f"[Unhandled error while displaying orders: {e}]"
+        print(info_str)
+
+    return stop_working
+
+
+
+# def check_short_stop_balance():
+#     print(f'\n\n*********************************')
+#     print(f'starting check_shorts_stops')
+
+    
+#     shorts_stops_qty = []
+#     working_stops_list = []
+
+#     get_shorts_qty_success = False
+#     get_short_cnt = 0
+
+#     while get_shorts_qty_success is False:
+
+#         now_time = datetime.now()
+#         now_time_str = now_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
+
+#         get_shorts_qty_success, shorts_stops_qty = positions.get_shorts_quantities()
+#         print(f'shorts qty success:{get_shorts_qty_success}')
+#         if get_shorts_qty_success is True:
+#             print(f'at {now_time_str}, shorts_qty type:{type(shorts_stops_qty)}, data:')
+#             print(json.dumps(shorts_stops_qty, indent=2))
+#             break
+
+#         else:
+#             get_short_cnt += 1
+#             print(f'2957 get_shorts_quantities() failed, attempts:{get_shorts_qty_success}')
+#             if get_short_cnt >= 5:
+#                 print(f'2958 too many get_shorts_quantities() failed, attempts:{get_shorts_qty_success}')
+#                 break
+
+#             time.sleep(0.5)
+
+#         pass # end of while
+
+#     orders = get_recent_orders()
+#     # print(json.dumps(orders, indent=2))
+
+#     working_stops_list = get_stops_working(orders)
+#     print(f'working_stops_list type{type(working_stops_list)}, data:')
+#     print(json.dumps(working_stops_list, indent=2))
+
+
+
+#     if not shorts_stops_qty:
+#         print("shorts_stops_qty list is empty")
+#     else:
+#         print("shorts_stops_qty list is not empty")
+
+
+#         # Build a lookup dictionary for shorts_qty keyed by symbol
+#         shorts_lookup = {item["symbol"]: item for item in shorts_stops_qty}
+
+#         # Iterate through working_stops_list and update stop_qty
+#         for stop in working_stops_list:
+#             symbol = stop["symbol"]
+#             if symbol in shorts_lookup:
+#                 current_stop_qty = shorts_lookup[symbol]["stop_qty"] or 0.0
+#                 shorts_lookup[symbol]["stop_qty"] = current_stop_qty + stop["stop_working_qty"]
+
+#         print(f'final shorts_stops_qty:')
+#         print(json.dumps(shorts_stops_qty, indent=2))
+
+#         for item in shorts_stops_qty:
+#             short_qty = item["short_qty"]
+#             stop_qty = item["stop_qty"]
+#             symbol = item["symbol"]
+
+#             # Skip if either stop or short value is None or not a number
+#             if not isinstance(short_qty, (int, float)) or not isinstance(stop_qty, (int, float)):
+#                 continue
+
+#             difference = short_qty - stop_qty
+#             diff_int = int(difference)
+#             short_qty_int = int(short_qty)
+#             stop_qty_int = int(stop_qty)
+
+#             if short_qty_int != stop_qty_int:
+                
+#                 print(f"short/stop for {symbol} is imbalanced, difference = {diff_int}")
+
+#                 if difference > 0:
+#                     print(f"{symbol} has more short contracts than stop orders by {diff_int} contracts")
+#                 else:
+#                     print(f"{symbol} has sufficient stop coverage")
+
+#             else:
+#                 print(f"short/stop for {symbol} is balanced ({short_qty_int}) each")
+
+
+
+#     print(f'exiting check_shorts_stops')
+#     print(f'\n\n*********************************')
+
+
+
+
+def generate_buy_to_close_form(symbol, qty):
+
+    abs_qty = abs(qty)
+
+        # Create the JSON order
+    json_order = {
+          "orderType": "MARKET",
+          "session": "NORMAL",
+          "duration": "DAY",
+          "orderStrategyType": "SINGLE",
+          "orderLegCollection": [
+            {
+              "instruction": "BUY_TO_CLOSE",
+              "quantity": abs_qty,
+              "instrument": {
+                "symbol": symbol,
+                "assetType": "OPTION"
+              }
+            }
+          ]
+    }
+
+    return json_order
+
+
+
+
+    
 
 
 def publish_grid_request():
