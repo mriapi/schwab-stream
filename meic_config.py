@@ -36,7 +36,7 @@ config_no_trade_dates = [
     "01/01/26", # Holiday
     "01/19/26", # Holiday
     "01/28/26", # FOMC statement
-    "01/30/26", # EOM
+    # "01/30/26", # EOM
     "02/16/26", # Holiday
     "02/18/26", # FOMC minutes
     "02/27/26", # EOM

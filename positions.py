@@ -282,6 +282,7 @@ def get_positions2():
 tokens_file_path = r"C:\MEIC\cred\tokens_mri.json"
 acct_file_path = r"C:\MEIC\cred\acct_mri.json"
 
+
 def get_positions3():
     # Check for the 'positions' key
 
@@ -365,6 +366,10 @@ def get_positions3():
                 
 
                 for position in account['securitiesAccount']['positions']:
+
+                    # print(f'9304 position type:{type(position)}')
+                    # print(json.dumps(position, indent=2))
+
                     instrument = position['instrument']
                     my_symbol = instrument['symbol']
 
@@ -439,6 +444,130 @@ def get_positions3():
             get_positions_success_flag = False
             return get_positions_success_flag, short_positions, long_positions
     
+
+
+
+
+
+def get_shorts_quantities():
+    # Check for the 'positions' key
+
+    shorts_quantity = []
+    get_shorts_success_flag = False
+
+    # print(f'p mri_tokens_file:{tokens_file_path}')
+
+    try:
+        # Open and read the JSON file
+        with open(tokens_file_path, "r") as f:
+            token_data = json.load(f)
+
+    except Exception as e:
+        print(f"4237 positions.py Error opening file: {e}")
+        return get_shorts_success_flag, shorts_quantity
+    
+    try:
+
+        # Extract values
+        access_token_issue_date = token_data.get("access_token_issued")
+        refresh_token_issue_date = token_data.get("refresh_token_issued")
+        token_dict = token_data.get("token_dictionary", {})
+
+        expires_time = token_dict.get("expires_in", 1800)  # Default to 1800 if missing
+        token_type = token_dict.get("token_type", "Bearer")  # Default if missing
+        scope = token_dict.get("scope", "api")  # Default if missing
+        refresh_token = token_dict.get("refresh_token")
+        access_token = token_dict.get("access_token")
+        id_token = token_dict.get("id_token")
+
+        # print(f'positons.py access_token:{access_token}')
+
+    except Exception as e:
+        print(f"9428 positions.py extracting data: {e}")
+        return get_shorts_success_flag, shorts_quantity
+
+
+
+
+
+    # Define the API URL
+    url = "https://api.schwabapi.com/trader/v1/accounts?fields=positions"
+
+    # Set headers for the request
+    headers = {
+        "accept": "application/json",
+        "Authorization": f"Bearer {access_token}"
+    }
+
+
+    try:
+
+        # Make the API request
+        response = requests.get(url, headers=headers)
+
+    except Exception as e:
+        print(f"9437 get_positions3(), An error occurred: {e}, exiting positions processing")
+        get_shorts_success_flag = False
+        return get_shorts_success_flag, shorts_quantity
+
+
+
+
+    # Handle the response
+    if response.status_code == 200:
+        get_shorts_success_flag = True
+
+        # positions_data = response.json()
+        account_details = response.json()
+        # print(f'account_details type:{type(account_details)}, data:\n{account_details}')
+
+        for account in account_details:
+            account_number = account['securitiesAccount']['accountNumber']
+            # print(f"\nAccount: {account_number}, Type: {account['securitiesAccount']['type']}")
+
+
+            if 'positions' in account['securitiesAccount']:
+
+                
+
+                for position in account['securitiesAccount']['positions']:
+
+                    # print(f'9204 position type:{type(position)}')
+                    # print(json.dumps(position, indent=2))
+
+                    if position.get("shortQuantity", 0) > 0:
+                        shorts_quantity.append({
+                            "symbol": position["instrument"]["symbol"],
+                            "short_qty": position["shortQuantity"],
+                            "stop_qty": None
+                        })
+
+
+
+            else:
+                # print(" No Positions ")
+                pass
+
+
+
+    else:
+        print(f"9412 Error: {response.status_code}, {response.text}")
+        return get_shorts_success_flag, shorts_quantity
+    
+
+    # print(f'shorts_quantity type:{type(shorts_quantity)}, data:')
+    # print(json.dumps(shorts_quantity, indent=2))
+    
+
+    return get_shorts_success_flag, shorts_quantity
+    
+
+
+
+
+
+
+
 
 
 

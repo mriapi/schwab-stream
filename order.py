@@ -510,7 +510,7 @@ def enter_ic_with_triggers(
             meic.post_tranche_data(info_str)
 
             info_str = f"Response code: {resp}"
-            # print(info_str)
+            print(info_str)
             meic.post_tranche_data(info_str)
 
 
