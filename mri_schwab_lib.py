@@ -1,6 +1,11 @@
 import json
 import requests
+import os
+from dotenv import load_dotenv
 from datetime import datetime, timezone, timedelta
+import smtplib
+from email.message import EmailMessage
+
 
 
 
@@ -636,6 +641,53 @@ def get_today_in_epoch():
     epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
     todays_epoch_time  = int((now - epoch).total_seconds() * 1000.0)
     return todays_epoch_time
+
+
+def send_email(recipients,subject,body):
+
+    try:
+
+        load_dotenv()  # load environment variables from .env file
+
+        my_gmail_user = os.getenv('GMAIL_USER')
+        my_gmail_passcode = os.getenv('GMAIL_APP_PASSCODE')
+
+        print(f'mrisl2 my_gmail_user: {my_gmail_user}')
+        print(f'mrisl3 my_gmail_passcode: {my_gmail_passcode}')
+
+        # receiver_email = "mri1700@gmail.com"
+        # recipients = ["mri1700@gmail.com", "rudy.isaacson@gmail.com", "scottike@gmail.com"]
+
+        today = datetime.today()
+        subject_str = f"{subject} {today.strftime('%Y-%m-%d %H:%M:%S')}"
+
+        # Create the email
+        msg = EmailMessage()
+        msg.set_content(body)
+        msg['Subject'] = subject_str
+        msg['From'] = my_gmail_user
+        msg['To'] = recipients
+
+    except Exception as e:
+        print(f"mris2 email setup exception: {e}")
+
+
+    try:
+        # Send the email using Gmail's SMTP server
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login(my_gmail_user, my_gmail_passcode)
+            smtp.send_message(msg)
+        print("mris4 Email sent successfully!")
+    except Exception as e:
+        print(f"mris5 Failed to send email: {e}")
+
+
+
+    
+
+
+
+
 
 
 
