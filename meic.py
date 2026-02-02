@@ -1680,8 +1680,9 @@ def check_short_stop_balance():
             # print(json.dumps(working_stops_list, indent=2))
 
         except Exception as e:
-            print(f"Error retrieving working stops: {e}")
-            working_stops_list = []
+            print(f"Error retrieving working stops: {e}, aborting check_short_stop_balancd")
+            # working_stops_list = []
+            return
 
         if not shorts_stops_qty:
             # print("shorts_stops_qty list is empty")
