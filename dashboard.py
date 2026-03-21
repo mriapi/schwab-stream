@@ -629,7 +629,7 @@ end_of_date_dt = datetime.now(timezone.utc)
 account_number, account_hash = mri_schwab_lib.get_account()
 access_token = mri_schwab_lib.get_access_token()
 short_positions, long_positions = mri_schwab_lib.get_positions()
-my_orders = mri_schwab_lib.get_orders(start_of_date_dt, end_of_date_dt)
+success_flag, my_orders = mri_schwab_lib.get_orders(start_of_date_dt, end_of_date_dt)
 my_transactions = mri_schwab_lib.get_transactions(start_of_date_dt, end_of_date_dt)
 
 # display_nested_list(my_orders)

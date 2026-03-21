@@ -1,3 +1,8 @@
+// For CSV output that includes slippage, example usage:
+// node genLogs.js 2026-02-04 CSV SPREADS
+
+
+
 const fs = require('fs');
 const path = require("path");
 
@@ -772,6 +777,29 @@ function matchTransactions() {
 
 }
 
+
+
+function isBeforeMarketOpenET() {
+    // Convert current moment into Eastern Time
+    let nowET = new Date(
+        new Date().toLocaleString("en-US", { timeZone: "America/New_York" })
+    );
+
+    let hourET = nowET.getHours();
+    let minuteET = nowET.getMinutes();
+
+    // Market opens at 9:30 AM ET
+    const cutoffHour = 9;
+    const cutoffMinute = 30;
+
+    // Return true if ET time is earlier than 9:30 AM
+    return (
+        hourET < cutoffHour ||
+        (hourET === cutoffHour && minuteET < cutoffMinute)
+    );
+}
+
+
 function fixTime (timeStamp) {
 
     // this converts to local time since time stamp is in UTC
@@ -780,34 +808,45 @@ function fixTime (timeStamp) {
     const hours = date.getHours()
     const minutes = date.getMinutes()
 
-    let timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
-    let startHour = 14
-    if (timezone === 'America/Los_Angeles') {
-        if (isDaylightSavingTime()) {
-            startHour = 7
-        } else {
-            startHour = 8
-        }
-    }
-    if (timezone === 'America/Denver') {
-        if (isDaylightSavingTime()) {
-            startHour = 6
-        } else {
-            startHour = 7
-        }
-    }
-    if (timezone === 'America/Boise') {
-        if (isDaylightSavingTime()) {
-            startHour = 6
-        } else {
-            startHour = 7
-        }
-    }
+    // let timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    // let startHour = 14
+    // if (timezone === 'America/Los_Angeles') {
+    //     if (isDaylightSavingTime()) {
+    //         startHour = 7
+    //     } else {
+    //         startHour = 8
+    //     }
+    // }
+    // if (timezone === 'America/Denver') {
+    //     if (isDaylightSavingTime()) {
+    //         startHour = 6
+    //     } else {
+    //         startHour = 7
+    //     }
+    // }
+    // if (timezone === 'America/Boise') {
+    //     if (isDaylightSavingTime()) {
+    //         startHour = 6
+    //     } else {
+    //         startHour = 7
+    //     }
+    // }
 
-    // everything before <startHour>:30 is really from the day before
-    if (hours < startHour || (hours === startHour && minutes < 30)) {
+
+    // // everything before <startHour>:30 is really from the day before
+    // if (hours < startHour || (hours === startHour && minutes < 30)) {
+    //     date.setHours(23, 59, 59, 0)
+    //     date.setDate(date.getDate() - 1)
+    // }
+
+
+
+    if (isBeforeMarketOpenET()) {
+        // console.log("ET time is earlier than 9:30 AM. changing date stamp");
         date.setHours(23, 59, 59, 0)
         date.setDate(date.getDate() - 1)
+    } else {
+        // console.log("ET time is 9:30 AM or later");
     }
 
     return date
@@ -1091,7 +1130,13 @@ function printResults() {
             console.log("ERROR: unknown IC status")
         }
     }
-    ls = '\nTotal P/L: ' + usCurrency.format(totalPL)
+
+    const thumbs = totalPL >= 0 ? "👍" : "👎";
+    // console.log(`${thumbs} Total P/L: ${usCurrency.format(totalPL)}`);
+    // console.log(`${thumbs}`);
+
+    // ls = '\nTotal P/L: ' + usCurrency.format(totalPL)
+    ls = `\nTotal P/L: ${usCurrency.format(totalPL)} ${thumbs} `;
     console.log(ls)
     ls = 'Entries: ' + entries.toFixed(0)
     console.log(ls)

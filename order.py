@@ -719,6 +719,11 @@ def generate_order_STO_IC_with_triggers(
     meic.post_tranche_data(info_str)
     meic.persist_string(info_str)
 
+
+    # un-comment one of these to force a rejected stop order
+    # call_stop_price = 0.10 # FORCE REJECTED call stop (use when market is falling)
+    # put_stop_price = 0.10 # FORCE REJECTED put stop (use when market is rising)
+
     
     # Create the JSON order
     json_order = {

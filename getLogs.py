@@ -1,15 +1,21 @@
 import json
+import csv
 import threading
 import pandas as pd
 # import schwabdev
 from dotenv import load_dotenv
 import os
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
+from datetime import time as dt_time
 import pytz
 import argparse
 # import positions
 import mri_schwab_lib
+import plotly.graph_objects as go
+import numpy as np
+
+
 
 
 
@@ -296,6 +302,218 @@ def save_orders_to_json(orders):
     with open(json_file_path, 'w') as json_file:
         json.dump(orders, json_file, indent=4)  
 
+def my_get_balances(activity_date):
+
+    retry_cnt = 0
+    RETRY_MAX = 20
+
+
+    while retry_cnt < RETRY_MAX:
+
+        retry_cnt += 1
+
+        try:
+
+            initialBalance, currentBalance = mri_schwab_lib.get_balances()
+            pnlAmount = float(currentBalance - initialBalance)
+            pnlPercent = float((pnlAmount / initialBalance) * 100)
+
+            print(f"\nInitial balance today: {initialBalance}, current balance: {currentBalance}")
+            print(f"P/L: {pnlAmount:.2f}, {pnlPercent:.1f}%\n")
+
+            break
+
+        except Exception as e:
+            print(f"error getting balances: {e}")
+            time.sleep(1)
+
+    if retry_cnt >= RETRY_MAX:
+        print(f'could not get balances')
+
+    else:
+
+        balance_data = {
+        "initialBalance": initialBalance,
+        "currentBalance": currentBalance,
+        "pnlAmount": pnlAmount,
+        "pnlPercent": pnlPercent
+        }
+
+        # Convert to pretty JSON (2‑space indentation)
+        balance_json = json.dumps(balance_data, indent=2)
+
+        print(balance_json)
+
+        today = activity_date
+        log_file_dir = f"C:\\MEIC\\log\\{today}"
+        print(f'Saving balances.json to {log_file_dir}')
+
+        # Check for the existence of the directory and create it if it does not exist
+        if not os.path.exists(log_file_dir):
+            os.makedirs(log_file_dir)
+
+        # Convert transactions to JSON format and save it to a file named transact.json
+        json_file_path = os.path.join(log_file_dir, 'balances.json')
+        with open(json_file_path, 'w') as json_file:
+            json.dump(balance_data, json_file, indent=2)  
+
+
+        # Save the same data in CSV format
+    csv_file_spec = os.path.join(log_file_dir, 'balances.csv')
+
+
+
+    with open(csv_file_spec, 'w', newline='') as csv_file:
+        writer = csv.writer(csv_file)
+        
+        # Write header row (keys)
+        writer.writerow(balance_data.keys())
+        
+        # Write data row (values)
+        writer.writerow(balance_data.values())
+
+        print(f"Saved balances.csv to {csv_file_spec}")
+
+    
+
+    csv_file_spec = os.path.join(log_file_dir, 'balances.csv')
+    print(f'log_file_dir:{log_file_dir}')
+    print(f'csv_file_spec:{csv_file_spec}')
+
+    print(f'{csv_file_spec} contents:')
+
+    with open(csv_file_spec, "r") as f:
+        contents = f.read()
+        print(contents)
+
+    print(f'len of contents:{len(contents)}')
+
+
+
+
+    print(f'csv_file_specfile size:')
+    print(os.path.getsize(csv_file_spec))
+
+
+
+
+    df = pd.read_csv(csv_file_spec)
+    
+    print(f'df:\n{df}')
+
+
+    pnl = df["pnlPercent"].iloc[0]
+
+    min_val = -3
+    max_val = 3
+
+    # -----------------------------
+    # Create Gauge
+    # -----------------------------
+
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=pnl,
+        number={
+            'suffix': '%',
+            'valueformat': '.2f',
+            'font': {'size': 28}
+        },
+        gauge={
+            'axis': {'range': [min_val, max_val], 'tickfont': {'size': 16}},
+            'bar': {'color': "rgba(0,0,0,0)"},  # hide default bar
+            # 'steps': [
+            #     {'range': [-2.0, -0.3], 'color': "red"},
+            #     {'range': [-0.3, 0.3], 'color': "yellow"},
+            #     {'range': [0.3, 2.0], 'color': "green"},
+            # ],
+
+            'steps': [
+                {'range': [-3.0, -0.3], 'color': "red"},
+                {'range': [-0.3, 0.3], 'color': "yellow"},
+                {'range': [0.3, 3.0], 'color': "green"},
+            ],
+        }
+    ))
+
+
+
+    # -----------------------------
+    # Needle Geometry
+    # -----------------------------
+
+    # True center of semicircle in paper coordinates
+    x_center = 0.5
+    y_center = 0.21   # critical fix — move pivot downward
+
+    # Convert pnl value to angle (180° semicircle)
+    angle = (pnl - min_val) / (max_val - min_val) * 180
+    theta = np.deg2rad(180 - angle)
+
+    # Needle length
+    r = 0.48
+
+    x_tip = x_center + r * np.cos(theta)
+    y_tip = y_center + r * np.sin(theta)
+
+    # -----------------------------
+    # Add Needle
+    # -----------------------------
+    fig.add_shape(
+        type="line",
+        x0=x_center, y0=y_center,
+        x1=x_tip, y1=y_tip,
+        line=dict(color="black", width=4)
+    )
+
+    # -----------------------------
+    # Add Center Hub
+    # -----------------------------
+    hub_size = 0.02
+
+    fig.add_shape(
+        type="circle",
+        x0=x_center - hub_size,
+        y0=y_center - hub_size,
+        x1=x_center + hub_size,
+        y1=y_center + hub_size,
+        fillcolor="black",
+        line_color="black"
+    )
+
+    # -----------------------------
+    # Final Layout
+    # -----------------------------
+    fig.update_layout(
+        height=400,
+        width=600,
+        margin=dict(l=40, r=40, t=40, b=40)
+    )
+
+    fig.add_annotation(
+        text="<b>% Daily Return On Account</b>",
+        x=0.5,
+        y=1.08,          # slightly above gauge
+        xref="paper",
+        yref="paper",
+        showarrow=False,
+        font=dict(size=20)
+    )
+
+
+    gauge_png_file_spec = os.path.join(log_file_dir, 'balances_gauge.png')
+    gauge_png_file_spec = 'balances_gauge.png'
+
+
+    # fig.write_image("balances_gauge.png")
+    fig.write_image(gauge_png_file_spec)
+    # fig.show()
+
+    
+
+        
+
+
 
 def main():
     global activity_date
@@ -322,6 +540,7 @@ def main():
         print(f'\n!! NO DATE PROVIDED, using todays date: {display_date}\n')
 
     activity_date = display_date
+    print(f'activity_date type:{type(activity_date)}, value:{activity_date}')
 
     my_account_number, my_account_hash = mri_schwab_lib.get_account()
 
@@ -330,7 +549,7 @@ def main():
     start_of_date_dt = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     end_of_date_dt = datetime.now(timezone.utc)
 
-    orders = mri_schwab_lib.get_orders(start_of_date_dt, end_of_date_dt)
+    success_flag, orders = mri_schwab_lib.get_orders(start_of_date_dt, end_of_date_dt)
 
     if orders:
         # print(f'\n 8974 orders type:{type(orders)}, data:\n{orders}\n')
@@ -339,18 +558,6 @@ def main():
     else:
         # print(f'\n 8974E no orders')
         pass
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -390,25 +597,9 @@ def main():
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     t_yesterday = datetime.now(timezone.utc) - timedelta(days=1)
     # print(f't_yesterday  type:{type(t_yesterday)}, value:{t_yesterday}')
     # print(f't_t_now  type:{type(t_now)}, value:{t_now}')
-
-
 
 
 
@@ -432,13 +623,37 @@ def main():
     # print(f'my_transactions data:\n{my_transactions}')
 
 
-    my_orders = mri_schwab_lib.get_orders (start_of_date_dt, end_of_date_dt)
+    success_flag, my_orders = mri_schwab_lib.get_orders (start_of_date_dt, end_of_date_dt)
     # print(f'my_orders type:{type(my_orders)}, data:\n{my_orders}')
 
 
     save_transactions_to_json(my_transactions)
     
     save_orders_to_json(my_orders)
+
+
+    # display_date is a string like "2026-02-13"
+    try:
+        # Convert string → date object
+        display_dt = datetime.strptime(display_date, "%Y-%m-%d").date()
+
+        # Get today's date in local/computer time
+        today = date.today()
+
+        if display_dt == today:
+            print("display_date IS today's date")
+        else:
+            print("display_date is NOT today's date")
+
+    except Exception as e:
+        print(f"Error parsing display_date: {e}")
+
+
+    my_get_balances(activity_date)
+
+
+
+    print(f'display_date type:{type(display_date)}, value:{display_date}')
 
 
 

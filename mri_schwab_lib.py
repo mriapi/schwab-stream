@@ -1,6 +1,11 @@
 import json
 import requests
+import os
+from dotenv import load_dotenv
 from datetime import datetime, timezone, timedelta
+import smtplib
+from email.message import EmailMessage
+
 
 
 
@@ -149,32 +154,47 @@ def get_account():
 
 def get_orders(from_entered_time, to_entered_time):
 
-    # print(f'004 account_hash:{account_hash}')
+    success_flag = True
+    orders_none = None
 
-    get_tokens()
-    get_account()
-    # print(f'account_hash:{account_hash}')
+    try:
 
-    """Retrieve orders for a specific account from Schwab API."""
-    url = f"https://api.schwabapi.com/trader/v1/accounts/{account_hash}/orders"
-    
-    headers = {
-        "Accept": "application/json",
-        "Authorization": f"Bearer {access_token}"
-    }
-    
-    params = {
-        "fromEnteredTime": from_entered_time.isoformat() if isinstance(from_entered_time, datetime) else from_entered_time,
-        "toEnteredTime": to_entered_time.isoformat() if isinstance(to_entered_time, datetime) else to_entered_time
-    }
+        # print(f'004 account_hash:{account_hash}')
 
-    response = requests.get(url, headers=headers, params=params)
+        get_tokens()
+        get_account()
+        # print(f'account_hash:{account_hash}')
 
-    if response.status_code == 200:
-        return response.json()  # Return parsed JSON response
-    else:
-        print(f"930 Error: {response.status_code}, {response.text}")
-        return None
+        """Retrieve orders for a specific account from Schwab API."""
+        url = f"https://api.schwabapi.com/trader/v1/accounts/{account_hash}/orders"
+        
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {access_token}"
+        }
+        
+        params = {
+            "fromEnteredTime": from_entered_time.isoformat() if isinstance(from_entered_time, datetime) else from_entered_time,
+            "toEnteredTime": to_entered_time.isoformat() if isinstance(to_entered_time, datetime) else to_entered_time
+        }
+
+        response = requests.get(url, headers=headers, params=params)
+
+        if response.status_code == 200:
+            success_flag = True
+            return success_flag, response.json()  # Return parsed JSON response
+        else:
+            print(f"930 Error: {response.status_code}, {response.text}")
+            success_flag = False
+            return success_flag, orders_none
+        
+    except Exception as e:
+        print(f"Error in mri_schwab_lib.get_orders(): {e}")
+        success_flag = False
+
+    return success_flag, orders_none
+
+
 
 
 
@@ -543,6 +563,74 @@ def get_positions():
 
 
 
+def get_balances():
+
+    initialBalance = None
+    currentBalance = None
+
+    try:
+
+        
+        access_token = get_access_token()
+        # print(f'access_token type{type(access_token)}, data:\n{access_token}')
+
+
+
+        # Define the API URL
+        url = "https://api.schwabapi.com/trader/v1/accounts?"
+
+        # Set headers for the request
+        headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer {access_token}"
+        }
+
+        # Make the API request
+        response = requests.get(url, headers=headers)
+
+        # print(f'100 response.status_code:{response.status_code}')
+
+        if response.status_code == 200:
+            response_json = response.json()
+            # print(f'response_json:\n{response_json}')
+            # print("Formatted response_json:")
+            # print(json.dumps(response_json, indent=2))
+
+
+
+            initialBalanceFl = float(
+                response_json[0]['securitiesAccount']['initialBalances']['cashBalance']
+            )
+            currentBalanceFl = float(
+                response_json[0]['securitiesAccount']['currentBalances']['cashBalance']
+            )
+
+            initialBalance = initialBalanceFl
+            currentBalance = currentBalanceFl
+
+            # pnlFl = currentBalanceFl - initialBalanceFl
+            # pnlPercent = (pnlFl / initialBalanceFl) * 100
+
+            # print(f"initial balance today: {initialBalanceFl}, current balance: {currentBalanceFl}")
+            # print(f"P/L: {pnlFl}, {pnlPercent}%")
+
+    
+        else:
+            print("pnl response Error:", response.status_code, response.text)
+
+
+    except Exception as e:
+        print(f'error attempting to get pnl:{e}')
+        buyingPowerFl = None
+        currentFundsForTrading = None
+
+
+
+    return initialBalance, currentBalance
+
+
+
+
 
 
 def get_option_buying_power():
@@ -585,12 +673,22 @@ def get_option_buying_power():
             )
             # print(f"My Buying Power: {myBuyingPowerFl}")
 
-            initialBalanceFl = float(
-                response_json[0]['securitiesAccount']['initialBalances']['cashBalance']
-            )
-            # print(f"initial balance: {initialBalanceFl}")
 
-             
+
+
+            # initialBalanceFl = float(
+            #     response_json[0]['securitiesAccount']['initialBalances']['cashBalance']
+            # )
+            # currentBalanceFl = float(
+            #     response_json[0]['securitiesAccount']['currentBalances']['cashBalance']
+            # )
+
+            # pnlFl = currentBalanceFl - initialBalanceFl
+            # pnlPercent = (pnlFl / initialBalanceFl) * 100
+
+            # print(f"initial balance today: {initialBalanceFl}, current balance: {currentBalanceFl}")
+            # print(f"P/L: {pnlFl}, {pnlPercent}%")
+
 
             currentFundsForTrading = float(
                 response_json[0]['securitiesAccount']['currentBalances']['availableFundsNonMarginableTrade']
@@ -636,6 +734,53 @@ def get_today_in_epoch():
     epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
     todays_epoch_time  = int((now - epoch).total_seconds() * 1000.0)
     return todays_epoch_time
+
+
+def send_email(recipients,subject,body):
+
+    try:
+
+        load_dotenv()  # load environment variables from .env file
+
+        my_gmail_user = os.getenv('GMAIL_USER')
+        my_gmail_passcode = os.getenv('GMAIL_APP_PASSCODE')
+
+        print(f'mrisl2 my_gmail_user: {my_gmail_user}')
+        print(f'mrisl3 my_gmail_passcode: {my_gmail_passcode}')
+
+        # receiver_email = "mri1700@gmail.com"
+        # recipients = ["mri1700@gmail.com", "rudy.isaacson@gmail.com", "scottike@gmail.com"]
+
+        today = datetime.today()
+        subject_str = f"{subject} {today.strftime('%Y-%m-%d %H:%M:%S')}"
+
+        # Create the email
+        msg = EmailMessage()
+        msg.set_content(body)
+        msg['Subject'] = subject_str
+        msg['From'] = my_gmail_user
+        msg['To'] = recipients
+
+    except Exception as e:
+        print(f"mris2 email setup exception: {e}")
+
+
+    try:
+        # Send the email using Gmail's SMTP server
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login(my_gmail_user, my_gmail_passcode)
+            smtp.send_message(msg)
+        print("mris4 Email sent successfully!")
+    except Exception as e:
+        print(f"mris5 Failed to send email: {e}")
+
+
+
+    
+
+
+
+
 
 
 

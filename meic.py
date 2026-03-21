@@ -10,6 +10,7 @@ import sys
 from dotenv import load_dotenv
 import pandas as pd
 from datetime import datetime, timezone, timedelta
+from datetime import time as dt_time
 
 import time  # standard time module
 from datetime import time as dt_time
@@ -30,6 +31,7 @@ import requests
 import meic_config
 import importlib
 import mri_schwab_lib
+import daily_results
 
 
 
@@ -47,6 +49,8 @@ live_trading_flag = meic_config.config_live_trading_flag
 
 max_meic_contracts = meic_config.MAX_CONTRACTS
 multiple_meic_contracts_flag = meic_config.MULTIPLE_CONTRACTS_FLAG
+
+do_meic_now = False
 
 
 no_trade_dates = [
@@ -116,6 +120,7 @@ reported_results = False
 
 spx_chain = None
 chain_quotes = None
+spx_data_to_archive = None
 
 
 
@@ -936,6 +941,10 @@ def process_message():
 
     global spx_chain, chain_quotes
 
+    global do_meic_now
+
+    global spx_data_to_archive
+
     check_balance_cnt = 0
 
     print(f'process message thread checking for market open')
@@ -943,7 +952,7 @@ def process_message():
     while not market_open_flag:
         if end_flag:
             return
-        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=-1)
         gbl_market_open_flag = market_open_flag
         time.sleep(2)
 
@@ -964,6 +973,11 @@ def process_message():
             # print(f'\n\n41 chain_quotes type:{type(chain_quotes)}, is not None')
             # print(f'2043 requested_grid_flag:{requested_grid_flag}')
             pass
+
+
+            if do_meic_now == True:
+                        print(f'10 do_meic_now:{do_meic_now}')
+                        # do_meic_now = False
 
 
 
@@ -1019,6 +1033,13 @@ def process_message():
                 continue
 
 
+            if do_meic_now == True:
+                print(f'20 do_meic_now:{do_meic_now}')
+                do_meic_now = False
+
+
+
+
             # payload_stripped = [
             #     {k: v for k, v in item.items() if k not in ('bid_time', 'ask_time', 'last_time')}
             #     for item in payload_dict
@@ -1060,6 +1081,10 @@ def process_message():
             # Print the elapsed time in milliseconds
             display_str= f'\n=================================='
             persist_string(display_str)
+            display_str = f'Pacific time: {current_time}'
+            persist_string(display_str)
+
+
 
             # display_str = f'meic: checking for entry at {current_time} Pacific Time'
             # print(display_str)
@@ -1143,9 +1168,20 @@ def process_message():
 
 
                 try:
-                    atm_string = f"SPX:{spx_display}, ATM straddle:{atm_display}, credit target:{credit_display}"
+                    atm_string = f"No recommendation, SPX:{spx_display}, ATM straddle:{atm_display}, credit target:{credit_display}"
                     print(atm_string)
                     persist_string(atm_string)
+
+                                # archive the quote chain
+                    if spx_data_to_archive is not None:
+                        # print(f'\n\n0101 spx_data_to_archive type:{type(spx_data_to_archive)}, data:')
+                        # print(json.dumps(spx_data_to_archive, indent=2))
+
+                        # print(f'archiving quote data when not recommended')
+
+                        archive_quote_data(spx_data_to_archive)
+
+                        spx_data_to_archive = None
 
                 except Exception as e:
                     print(f'\n89073 exception trying to format and display spx, straddle, target credit, e:{e}')
@@ -1358,6 +1394,12 @@ def process_message():
 
                     new_entry_time = False
 
+
+                    if do_meic_now == True:
+                        print(f'80 do_meic_now:{do_meic_now}')
+                        do_meic_now = False
+
+                    
                         
                     for entry_time in entry_times:
 
@@ -1367,6 +1409,10 @@ def process_message():
                         
                         # Convert entry_time to today's datetime in Eastern Time
                         entry_time_today = eastern.localize(datetime.combine(current_time.date(), entry_time))
+
+                        if do_meic_now == True:
+                            print(f'90 do_meic_now:{do_meic_now}')
+                            do_meic_now = False
 
                         # Check if the time is crossed but not processed
                         if entry_time_today <= current_time and entry_time not in processed_times:
@@ -1464,8 +1510,25 @@ def process_message():
                                         print(f'\n89004 ic order id type:{type(ic_order_id)}, data:{ic_order_id}')
                                         # print(f'\n89006 ic order details type:{type(ic_order_details)}, data:{ic_order_details}')
 
+                                    
+
+
                                     except Exception as e:
                                         print(f'\n89089 exception trying to display live order data, e:{e}')
+
+
+                                    
+                                    print(f'01 waiting to check for short/stop balance')
+                                    time.sleep(4)
+                                    check_short_stop_balance()
+
+                                    print(f'02 waiting to check for short/stop balance')
+                                    time.sleep(1)
+                                    check_short_stop_balance()
+                                    
+                                    print(f'03 waiting to check for short/stop balance')
+                                    time.sleep(1)
+                                    check_short_stop_balance()
                                 
 
 
@@ -1537,7 +1600,7 @@ def process_message():
 
 
             print()
-            atm_string = f'SPX:{spx_price:.2f}, ATM straddle:{atm_straddle:.2f}, target credit:{target_credit:.2f}'
+            atm_string = f'Recommended, SPX:{spx_price:.2f}, ATM straddle:{atm_straddle:.2f}, target credit:{target_credit:.2f}'
             print(atm_string)
             persist_string(atm_string)
 
@@ -1552,6 +1615,17 @@ def process_message():
             # info_string = f'multi_contract_qty:{multi_contract_qty}'
             # print(info_string)
             # persist_string(info_string)
+
+            # archive the quote chain
+            if spx_data_to_archive is not None:
+                # print(f'\n\n0001 spx_data_to_archive type:{type(spx_data_to_archive)}, data:')
+                # print(json.dumps(spx_data_to_archive, indent=2))
+
+                # print(f'archiving quote data after recommended')
+
+                archive_quote_data(spx_data_to_archive)
+
+                spx_data_to_archive = None
 
 
             
@@ -1572,26 +1646,155 @@ def process_message():
         check_balance_cnt += 1
         if check_balance_cnt % 10 == 2:
             check_short_stop_balance()
+
+            # recipient_list = ["mri1700@gmail.com"]
+            # mri_schwab_lib.send_email(recipient_list, "test_sub", "test_body")
         time.sleep(1)
 
 
-
-
-
 def check_short_stop_balance():
+
     try:
+        # Get current time in Eastern Time
+        eastern = pytz.timezone("US/Eastern")
+        now_et = datetime.now(eastern).time()
+
+        # print(f'3305 now_et:{now_et}')
+
+        start = dt_time(9, 31)   # 9:30 AM ET
+        end   = dt_time(15, 56)  # 3:55 PM ET
+
+        if not (start <= now_et <= end):
+            # print(f'not calling shortstop_balance_debounce because we are outside of the market hours')
+            return
+
+    except Exception as e:
+        print(f"error setting up time window for short/stop balance check: {e}.  Returning without checking")
+        return False
 
 
-        my_market_open = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=(-1) )
+    # print(f"\nin check short stop balance()")
+
+    any_imbalance_flag = False
+
+    for i in range(1, 5):   # iterations 1 through 4
+        
+
+        imbalance_flag = shortstop_balance_debounce(False)
+
+        # print(f"check imbalance Iteration {i} of 5, imbalance_flag:{imbalance_flag}")
+
+        if imbalance_flag is True:
+            current_time = datetime.now() 
+            now_time_str = current_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
+
+            print(f'imbalance was found in iteration {i} at {now_time_str}, debouncing')
+            any_imbalance_flag = True
+
+        if imbalance_flag is False:
+            # Abort early if the function signals to stop
+            break
+
+        time.sleep(1)
+
+        # end of for loop
+
+    if imbalance_flag is True:
+        current_time = datetime.now() 
+        now_time_str = current_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
+        print(f'correcting imbalance {now_time_str}')
+        shortstop_balance_debounce(True)
+
+
+        try:
+            email_subject = f'!!!!! debounced MEIC imbalance, attempting correction at {now_time_str}'
+            email_body = f'!!!!! debounced MEIC imbalance, attempting correction at {now_time_str}'
+            recipient_list = ["mri1700@gmail.com"]
+            mri_schwab_lib.send_email(recipient_list, email_subject, email_body)
+
+        except Exception as e:
+            print(f"Error attempting correction email: {e}")
+
+
+
+
+
+
+    else:
+        if any_imbalance_flag is True:
+            current_time = datetime.now() 
+            now_time_str = current_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
+            print(f"we debounced detection of a short/stop and took no action at {now_time_str}")
+
+            # try:
+            #     email_subject = f'!!!!! MEIC imbalance successful debounce at {now_time_str}'
+            #     email_body = f'!!!!! MEIC imbalance successful debounce at {now_time_str}'
+            #     recipient_list = ["mri1700@gmail.com"]
+            #     mri_schwab_lib.send_email(recipient_list, email_subject, email_body)
+
+            # except Exception as e:
+            #     print(f"Error attempting successful debounced email: {e}")
+
+
+    
+
+def shortstop_balance_debounce(correction_flag):
+
+    working_stops_list = None
+    changed_stops_null_to_zero = False
+    orders = None
+
+    # return value: True if imbalance was found.  Otherwise False
+
+
+    try:
+        # Get current time in Eastern Time
+        eastern = pytz.timezone("US/Eastern")
+        now_et = datetime.now(eastern).time()
+
+        # print(f'3305 now_et:{now_et}')
+
+        start = dt_time(9, 30)   # 9:30 AM ET
+        end   = dt_time(15, 55)  # 3:55 PM ET
+
+        if start <= now_et <= end:
+            # check for short/stop imbalance
+            pass
+
+        else:
+
+            # rpt_start = dt_time(15, 57) # 3:57 PM ET
+            # rpt_end = dt_time(16, 3) # 4:03 PM ET
+
+            # if rpt_start <= now_et <= rpt_end:
+            #     print(f'02 confirmation that we dont check_shortstop() at this time, now_et {now_et}')
+            
+            # trial_market_open, et, to_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=-5)
+            # print(f'04 we dont check_shortstop() at this time, trial_market_open:{trial_market_open}')
+
+            return False
+
+    except Exception as e:
+        print(f"error setting up time window for short/stop check: {e}.  Returning without checking")
+        return False
+
+
+
+
+    try:
+        
+
+
+        my_market_open, et, to_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=-5 )
         if my_market_open is False:
             now_time = datetime.now()
             now_time_str = now_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
-            print(f'\naborting check_short_stop_balance() because market is closed\n')
-            return
+            # print(f'\naborting check_short_stop_balance() because market is closed\n')
+            return False
 
 
-        print(f'\n\n*********************************')
-        print(f'starting check_shorts_stops')
+        # print(f'\n\n*********************************')
+        # print(f'starting check_shorts_stops')
 
 
 
@@ -1607,14 +1810,17 @@ def check_short_stop_balance():
                 now_time_str = now_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
 
                 get_shorts_qty_success, shorts_stops_qty = positions.get_shorts_quantities()
-                print(f'shorts qty success:{get_shorts_qty_success}')
+                # print(f'shorts qty success:{get_shorts_qty_success}')
+
                 if get_shorts_qty_success is True:
-                    print(f'at {now_time_str}, shorts_qty type:{type(shorts_stops_qty)}, data:')
-                    print(json.dumps(shorts_stops_qty, indent=2))
+                    # print(f'at {now_time_str}, shorts_qty type:{type(shorts_stops_qty)}, data:')
+                    # print(json.dumps(shorts_stops_qty, indent=2))
+
                     break
+
                 else:
                     get_short_cnt += 1
-                    print(f'2957 get_shorts_quantities() failed, attempts:{get_short_cnt}')
+                    # print(f'2957 get_shorts_quantities() failed, attempts:{get_short_cnt}')
                     if get_short_cnt >= 5:
                         print(f'2958 too many get_shorts_quantities() failed, attempts:{get_short_cnt}')
                         break
@@ -1624,18 +1830,27 @@ def check_short_stop_balance():
                 break
 
         try:
-            orders = get_recent_orders()
+            success_flag, orders = get_recent_orders()
+            if success_flag is False:
+                print(f'in check short/stop imbalnce, get_recent_orders() was not successful. Aborting')
+                return False
+
+
             working_stops_list = get_stops_working(orders)
-            print(f'working_stops_list type{type(working_stops_list)}, data:')
-            print(json.dumps(working_stops_list, indent=2))
+            # print(f'working_stops_list type{type(working_stops_list)}, data:')
+            # print(json.dumps(working_stops_list, indent=2))
+
         except Exception as e:
-            print(f"Error retrieving working stops: {e}")
-            working_stops_list = []
+            print(f"Error retrieving working stops: {e}, aborting check_short_stop_balancd")
+            # working_stops_list = []
+            return False
 
         if not shorts_stops_qty:
-            print("shorts_stops_qty list is empty")
+            # print("shorts_stops_qty list is empty")
+            pass
         else:
-            print("shorts_stops_qty list is not empty")
+            # print("shorts_stops_qty list is not empty")
+            pass
 
             try:
                 # Build a lookup dictionary for shorts_qty keyed by symbol
@@ -1648,17 +1863,36 @@ def check_short_stop_balance():
                         current_stop_qty = shorts_lookup[symbol].get("stop_qty") or 0.0
                         shorts_lookup[symbol]["stop_qty"] = current_stop_qty + stop.get("stop_working_qty", 0.0)
 
-                print(f'final shorts_stops_qty:')
-                print(json.dumps(shorts_stops_qty, indent=2))
+                # print(f'final shorts_stops_qty:')
+                # print(json.dumps(shorts_stops_qty, indent=2))
 
                 for item in shorts_stops_qty:
                     short_qty = item.get("short_qty")
                     stop_qty = item.get("stop_qty")
                     symbol = item.get("symbol")
 
-                    # Skip if either stop or short value is None or not a number
-                    if not isinstance(short_qty, (int, float)) or not isinstance(stop_qty, (int, float)):
+                    # print(f'ib010 checking symbol:{symbol}, short_qty:{short_qty}, stop_qty:{stop_qty}')
+
+                    # Skip if short_qty is null/None
+                    if not isinstance(short_qty, (int, float)):
+                        # print(f'ib012 skipping {symbol} because short_qty is null/None')
                         continue
+
+                    # Skip if short_qty is 0
+                    if short_qty == 0:
+                        # print(f'ib014 skipping {symbol} because short_qty is zero')
+                        continue
+
+
+                    if not isinstance(stop_qty, (int, float)):
+                        # print(f'ib020 changing stop_qty from null/None to 0')
+                        changed_stops_null_to_zero = True
+                        stop_qty = 0
+                    else:
+                        changed_stops_null_to_zero = False
+
+                    # print(f'ib030 adjusted for null/None, short_qty:{short_qty}, stop_qty:{stop_qty}')
+
 
                     difference = short_qty - stop_qty
                     diff_int = int(difference)
@@ -1666,21 +1900,67 @@ def check_short_stop_balance():
                     stop_qty_int = int(stop_qty)
 
                     if short_qty_int != stop_qty_int:
-                        print(f"short/stop for {symbol} is imbalanced, difference = {diff_int}")
+                        print(f"\n\n!!!!!!!! short/stop for {symbol} is imbalanced, difference = {diff_int}, correction flag:{correction_flag}")
                         if difference > 0:
-                            print(f"{symbol} has more short contracts than stop orders by {diff_int} contracts")
+
+                            if correction_flag is False:
+                                print(f"non-correction debounce {symbol} has more short contracts than stop orders by {diff_int} contracts.  returning")
+                                return True
+
+
+
+                            print(f"!!!!!!!!! {symbol} has more short contracts than stop orders by {diff_int} contracts")
+
+
+                            btc_form = generate_buy_to_close_form(symbol, diff_int)
+                            print(f'btc_form type{type(btc_form)}, form:\n{btc_form}')
+
+                            success_flag = order.place_order(btc_form)
+                            print(f'btc success_flag:{success_flag }')
+
+                            try:
+
+                                now_time = datetime.now()
+                                now_time_str = now_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
+
+                                email_subject = f'!!!!! MEIC imbalance !!!!!'
+                                email_body = f'On {now_time_str} {symbol} had {short_qty_int} short contracts with {stop_qty_int} stops.  BTC succes_flag:{success_flag}'
+                                recipient_list = ["mri1700@gmail.com"]
+                                mri_schwab_lib.send_email(recipient_list, email_subject, email_body)
+
+                            except Exception as e:
+                                print(f"Error attempting short/stop imbalance email: {e}")
+
+                            try:
+
+                                print(f'changed_stops_null_to_zero: {changed_stops_null_to_zero}')
+                                # print(f'3057 orders:')
+                                # print(json.dumps(orders, indent=2))
+                                print(f'working_stops_list type: {type(working_stops_list)}, data:\n{working_stops_list}')
+
+                            except Exception as e:
+                                print(f"Error attempting to display imbalance diagnostics: {e}")
+                            
+
+
                         else:
-                            print(f"{symbol} has sufficient stop coverage")
+                            # print(f"{symbol} has sufficient stop coverage")
+                            return False
+                            pass
                     else:
-                        print(f"short/stop for {symbol} is balanced ({short_qty_int}) each")
+                        # print(f"short/stop for {symbol} is balanced ({short_qty_int}) each")
+                        pass
+
             except Exception as e:
                 print(f"Error processing shorts_stops_qty: {e}")
 
-        print(f'exiting check_shorts_stops')
-        print(f'\n\n*********************************')
+        # print(f'exiting check_shorts_stops')
+        # print(f'*********************************\n\n')
 
     except Exception as e:
         print(f"Unexpected error in check_short_stop_balance: {e}")
+
+    return False
 
 
 
@@ -1720,9 +2000,9 @@ def get_recent_orders():
 
 
 
-    orders = mri_schwab_lib.get_orders(start_of_date_dt, end_of_date_dt)
+    success_flag, orders = mri_schwab_lib.get_orders(start_of_date_dt, end_of_date_dt)
     # print(f'recent orders, type:{type(orders)}, data:\n{orders}')
-    return orders
+    return success_flag, orders
     pass
 
 
@@ -1995,101 +2275,6 @@ def get_stops_working(orders):
 
 
 
-# def check_short_stop_balance():
-#     print(f'\n\n*********************************')
-#     print(f'starting check_shorts_stops')
-
-    
-#     shorts_stops_qty = []
-#     working_stops_list = []
-
-#     get_shorts_qty_success = False
-#     get_short_cnt = 0
-
-#     while get_shorts_qty_success is False:
-
-#         now_time = datetime.now()
-#         now_time_str = now_time.strftime('%m/%d/%y %H:%M:%S.%f')[:-3]
-
-#         get_shorts_qty_success, shorts_stops_qty = positions.get_shorts_quantities()
-#         print(f'shorts qty success:{get_shorts_qty_success}')
-#         if get_shorts_qty_success is True:
-#             print(f'at {now_time_str}, shorts_qty type:{type(shorts_stops_qty)}, data:')
-#             print(json.dumps(shorts_stops_qty, indent=2))
-#             break
-
-#         else:
-#             get_short_cnt += 1
-#             print(f'2957 get_shorts_quantities() failed, attempts:{get_shorts_qty_success}')
-#             if get_short_cnt >= 5:
-#                 print(f'2958 too many get_shorts_quantities() failed, attempts:{get_shorts_qty_success}')
-#                 break
-
-#             time.sleep(0.5)
-
-#         pass # end of while
-
-#     orders = get_recent_orders()
-#     # print(json.dumps(orders, indent=2))
-
-#     working_stops_list = get_stops_working(orders)
-#     print(f'working_stops_list type{type(working_stops_list)}, data:')
-#     print(json.dumps(working_stops_list, indent=2))
-
-
-
-#     if not shorts_stops_qty:
-#         print("shorts_stops_qty list is empty")
-#     else:
-#         print("shorts_stops_qty list is not empty")
-
-
-#         # Build a lookup dictionary for shorts_qty keyed by symbol
-#         shorts_lookup = {item["symbol"]: item for item in shorts_stops_qty}
-
-#         # Iterate through working_stops_list and update stop_qty
-#         for stop in working_stops_list:
-#             symbol = stop["symbol"]
-#             if symbol in shorts_lookup:
-#                 current_stop_qty = shorts_lookup[symbol]["stop_qty"] or 0.0
-#                 shorts_lookup[symbol]["stop_qty"] = current_stop_qty + stop["stop_working_qty"]
-
-#         print(f'final shorts_stops_qty:')
-#         print(json.dumps(shorts_stops_qty, indent=2))
-
-#         for item in shorts_stops_qty:
-#             short_qty = item["short_qty"]
-#             stop_qty = item["stop_qty"]
-#             symbol = item["symbol"]
-
-#             # Skip if either stop or short value is None or not a number
-#             if not isinstance(short_qty, (int, float)) or not isinstance(stop_qty, (int, float)):
-#                 continue
-
-#             difference = short_qty - stop_qty
-#             diff_int = int(difference)
-#             short_qty_int = int(short_qty)
-#             stop_qty_int = int(stop_qty)
-
-#             if short_qty_int != stop_qty_int:
-                
-#                 print(f"short/stop for {symbol} is imbalanced, difference = {diff_int}")
-
-#                 if difference > 0:
-#                     print(f"{symbol} has more short contracts than stop orders by {diff_int} contracts")
-#                 else:
-#                     print(f"{symbol} has sufficient stop coverage")
-
-#             else:
-#                 print(f"short/stop for {symbol} is balanced ({short_qty_int}) each")
-
-
-
-#     print(f'exiting check_shorts_stops')
-#     print(f'\n\n*********************************')
-
-
-
 
 def generate_buy_to_close_form(symbol, qty):
 
@@ -2263,12 +2448,14 @@ def check_trading_day():
 
 
 REQUESTS_GET_TIMEOUT = 10
-FIXED_CHAIN_STRIKE_CNT = 55
+# FIXED_CHAIN_STRIKE_CNT = 55
+FIXED_CHAIN_STRIKE_CNT = 60
 
 
 def get_spx_option_chain():
     # global chain_strike_cnt
     global rx_accessToken
+    global spx_chain
     # global chain_data_lock
 
     # with chain_data_lock:
@@ -2333,6 +2520,177 @@ def get_spx_option_chain():
     except Exception as err:
         raise RuntimeError(f"3080 Unexpected error occurred: {err}") from err
     
+
+def get_chain_desination_dir():
+    base_dir = r"C:\MEIC\chain"
+
+    # Get the current date in yymmdd format
+    current_date = datetime.now().strftime('%y%m%d')
+
+    # Create the full directory path
+    full_dir = os.path.join(base_dir, f"data_{current_date}")
+
+    # Create the directory if it does not already exist
+    os.makedirs(full_dir, exist_ok=True)
+
+    return full_dir
+
+
+def archive_quote_data(chain_data):
+
+    try: 
+        current_datetime = datetime.now().strftime("%y%m%d%H%M%S")
+        current_hhmmss = datetime.now().strftime("%H:%M:%S")
+        # print(f'current_datetime:{current_datetime}')
+        # directory = r"C:\MEIC\chain_data"
+        directory = get_chain_desination_dir()
+        filename = f"quote_{current_datetime}.json"
+        file_spec = os.path.join(directory, filename)
+        
+
+        # Ensure the directory exists
+        os.makedirs(directory, exist_ok=True)  
+
+        # print(f'chain data file_spec:{file_spec}') 
+
+
+        get_positions_success_flag = False
+        get_positions_cnt = 0
+        get_positions_try_max = 5
+        while get_positions_success_flag == False:
+
+            # try get account details and short/long legs here
+            get_positions_success_flag, gbl_short_positions, gbl_long_positions = positions.get_positions3()
+            # print(f'\nchain: get_positions_success_flag:{get_positions_success_flag}')
+            if get_positions_success_flag == False:
+                time.sleep(5)
+                get_positions_cnt += 1
+                if get_positions_cnt > get_positions_try_max:
+                    break
+
+                print(f'5834 retrying get positions')
+
+
+        if get_positions_success_flag == False:
+            print(f'\nchain: get positions failed')
+
+        else:
+
+            if not gbl_short_positions:
+                info_str = f'No existing short positions'
+                pass
+            else:
+                info_str = f'short positions: {gbl_short_positions}'
+                pass
+
+            # persist_string(info_str)
+            # print(info_str)
+
+            if not gbl_long_positions:
+                info_str = f'No existing long positions'
+                pass
+            else:
+                info_str = f'long positions: {gbl_long_positions}'
+                pass
+
+            # persist_string(info_str)
+            # print(info_str)
+
+        short_json = {"short_positions": gbl_short_positions}
+        long_json =  {"long_positions": gbl_long_positions}
+
+
+
+        extracted = extract_quote_data(chain_data)
+
+        # print(f'extracted type:{type(extracted)}, data:\n{extracted}')
+
+        # with open(file_spec, "w", encoding="utf-8") as f:
+        #     json.dump(extracted, f, indent=2)
+
+        quote_all_json = [
+            extracted,
+            short_json,
+            long_json
+        ]
+
+        with open(file_spec, "w", encoding="utf-8") as f:
+            json.dump(quote_all_json, f, indent=2)
+
+
+    except Exception as e:
+        print(f"archive_quote_dat error: {e}")
+
+
+
+
+def extract_quote_data(spx_data_to_archive):
+
+    def fmt(ts):
+        """Convert milliseconds timestamp → HH:MM:SS:ms string."""
+        if ts is None:
+            return None
+        dt = datetime.fromtimestamp(ts / 1000)
+        return dt.strftime("%H:%M:%S:%f")[:-3]   # trim to milliseconds
+
+    spx_chain = []
+
+    # ---------------------------------------------------------
+    # 1. Add underlying SPX quote
+    # ---------------------------------------------------------
+    und = spx_data_to_archive.get("underlying", {})
+    spx_chain.append({
+        "symbol": und.get("symbol"),
+        "bid": und.get("bid"),
+        "bid_time": fmt(und.get("quoteTime")),
+        "ask": und.get("ask"),
+        "ask_time": fmt(und.get("quoteTime")),
+        "last": und.get("last"),
+        "last_time": fmt(und.get("tradeTime")),
+    })
+
+    # ---------------------------------------------------------
+    # 2. Helper to extract option entries
+    # ---------------------------------------------------------
+    def extract_from_exp_map(exp_map):
+        for exp_key, strikes in exp_map.items():
+            for strike, contracts in strikes.items():
+                for opt in contracts:
+                    spx_chain.append({
+                        "symbol": opt.get("symbol"),
+                        "bid": opt.get("bid"),
+                        "bid_time": fmt(opt.get("quoteTimeInLong")),
+                        "ask": opt.get("ask"),
+                        "ask_time": fmt(opt.get("quoteTimeInLong")),
+                        "last": opt.get("last"),
+                        "last_time": fmt(opt.get("tradeTimeInLong")),
+                    })
+
+    # ---------------------------------------------------------
+    # 3. Extract CALLS
+    # ---------------------------------------------------------
+    call_map = spx_data_to_archive.get("callExpDateMap", {})
+    extract_from_exp_map(call_map)
+
+    # ---------------------------------------------------------
+    # 4. Extract PUTS
+    # ---------------------------------------------------------
+    put_map = spx_data_to_archive.get("putExpDateMap", {})
+    extract_from_exp_map(put_map)
+
+    # ---------------------------------------------------------
+    # 5. Return final structure
+    # ---------------------------------------------------------
+    return { "spx_chain": spx_chain }
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2445,7 +2803,7 @@ def meic_entry():
 
     global requested_grid_time, requested_grid_flag
 
-    global spx_chain, chain_quotes
+    global spx_chain, chain_quotes, spx_data_to_archive
     global reported_results
 
 
@@ -2459,7 +2817,7 @@ def meic_entry():
         while not market_open_flag:
             if end_flag:
                 return
-            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
+            market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=-1)
             gbl_market_open_flag = market_open_flag
 
             
@@ -2472,12 +2830,15 @@ def meic_entry():
                 check_trading_day()
 
                 if trade_today_flag is True:
+                # if True:
 
                     current_time_obj = datetime.strptime(current_eastern_hhmmss, '%H:%M:%S').time()
 
-                    # Define the threshold time
-                    results_report_time_start = dt_time(16, 5, 0)
-                    results_report_time_end = dt_time(16, 6, 59)
+                    # Define the threshold time for sending the daily results email
+                    results_report_time_start = dt_time(16, 4, 00)
+                    results_report_time_end = dt_time(16, 5, 59)
+                    # results_report_time_start = dt_time(20, 45, 0)
+                    # results_report_time_end = dt_time(21, 47, 59)
 
                     # Compare
                     if current_time_obj >= results_report_time_start and current_time_obj <= results_report_time_end:
@@ -2485,18 +2846,47 @@ def meic_entry():
                         if reported_results is False:
 
                             print(f'We need to report daily results')
-                            daily_results_email = subprocess.run(
-                                ["python", "daily_results.py"],
-                                capture_output=True,
-                                text=True
-                            )
 
-                            print("daily results output:", daily_results_email.stdout)
+                            # daily_results_email = subprocess.run(
+                            #     ["python", "daily_results.py"],
+                            #     capture_output=True,
+                            #     text=True
+                            # )
+
+                            # daily_results_email = subprocess.run(
+                            #     ["python", "-u", "daily_results.py"],
+                            #     capture_output=True,
+                            #     text=True
+                            # )
+
+                            # daily_results_email = subprocess.run(
+                            #     ["python", "daily_results.py"],
+                            #     capture_output=True,
+                            #     text=True,
+                            #     encoding="utf-8"
+                            # )
+
+                            # daily_results_email = subprocess.run(
+                            #     ["python", "-X", "utf8", "daily_results.py"],
+                            #     capture_output=True,
+                            #     text=True,
+                            #     encoding="utf-8"
+                            # )
+                            # print("daily results output:", daily_results_email.stdout)
+
+                            dr_output = daily_results.all()
+                            # print(f'daily results output:<{dr_output}>')
+
+
+
+
+
+                            
 
 
                             reported_results = True
                     else:
-                        # print("Current time is earlier than 16:05:00 Eastern")
+                        # print("not time to report results")
                         reported_results = False
 
                 else:
@@ -2554,7 +2944,7 @@ def meic_entry():
             inner_miec_cnt += 1
 
             if inner_miec_cnt % 10 == 9:
-                market_open_flag, current_eastern_time, temp_secs_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
+                market_open_flag, current_eastern_time, temp_secs_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=-1)
                 gbl_market_open_flag = market_open_flag
                 
                 if not market_open_flag:
@@ -2670,19 +3060,23 @@ def meic_entry():
                 try:
 
                     spx_chain = get_spx_option_chain()
+                    spx_data_to_archive = spx_chain
+
 
                 except Exception as e:
                     print(f"get_spx_option_chain returned an exception: {e}")
-                    spx_chain = None
+                    spx_data_to_archive = spx_chain = None
 
 
-                # print(f'\n\n00 spx_chain type:{type(spx_chain)}, data:\n{spx_chain}')
+                # print(f'\n\n0000 spx_chain type:{type(spx_chain)}, data:\n{spx_chain}')
+                # print(f'\n\n0000 spx_chain type:{type(spx_chain)}, data:')
+                # print(json.dumps(spx_chain, indent=2))
 
                 if spx_chain is not None:
                     chain_quotes = extract_chain_quotes(spx_chain)
                     if chain_quotes is not None:
-                        # print(f'\n\n11 chain_quotes type:{type(chain_quotes)}, data:\n{chain_quotes}')
-                        # print(f'\n\n11 chain_quotes type:{type(chain_quotes)}, is not None')
+                        # print(f'\n\n0021 chain_quotes type:{type(chain_quotes)}, data:\n{chain_quotes}')
+                        # print(f'\n\n0022 chain_quotes type:{type(chain_quotes)}, is not None')
                         pass
 
                     else:
@@ -2766,7 +3160,7 @@ def wait_for_market_to_open():
     print(f'meic: checking for market open 2')
 
     while True:
-        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
+        market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=-1)
         gbl_market_open_flag = market_open_flag
         
         if market_open_flag:
@@ -2809,7 +3203,7 @@ def mqtt_services():
     # while not market_open_flag:
     #     if end_flag:
     #         return
-    #     market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
+    #     market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=-1)
     #     time.sleep(2)
 
 
@@ -2832,7 +3226,7 @@ def mqtt_services():
     #     mqtt_client.loop(timeout=1.0)  # process network traffic, with a 1-second timeout
     #     # time.sleep(1) 
 
-    #     # market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=0)
+    #     # market_open_flag, current_eastern_time, seconds_to_next_minute = market_open.is_market_open2(open_offset=IS_OPEN_OPEN_OFFSET, close_offset=-1)
     #     # if market_open_flag == False:
     #     #     end_flag = True
     #     #     current_eastern_hhmmss = current_eastern_time.strftime('%H:%M:%S')
@@ -2917,6 +3311,7 @@ def signal_handler(sig, frame):
 def keyboard_handler_task():
     """ Polling loop for keyboard monitoring in a separate thread """
     global end_flag
+    global do_meic_now
 
 
     no_key_count = 0
@@ -2943,6 +3338,7 @@ def keyboard_handler_task():
 
                 if input_str == "meicnow":
                     print(f' meicnow detected')
+                    do_meic_now = True
 
                 if key == "":
                     # print(f' Null key, current input str:<{input_str}>')

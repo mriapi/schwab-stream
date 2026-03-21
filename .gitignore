@@ -7,6 +7,9 @@
 # json package file
 *.json
 
+# balances image file
+balances_gauge.png
+
 # CSV files recursively
 **/*.csv
 
