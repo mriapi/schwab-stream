@@ -154,32 +154,47 @@ def get_account():
 
 def get_orders(from_entered_time, to_entered_time):
 
-    # print(f'004 account_hash:{account_hash}')
+    success_flag = True
+    orders_none = None
 
-    get_tokens()
-    get_account()
-    # print(f'account_hash:{account_hash}')
+    try:
 
-    """Retrieve orders for a specific account from Schwab API."""
-    url = f"https://api.schwabapi.com/trader/v1/accounts/{account_hash}/orders"
-    
-    headers = {
-        "Accept": "application/json",
-        "Authorization": f"Bearer {access_token}"
-    }
-    
-    params = {
-        "fromEnteredTime": from_entered_time.isoformat() if isinstance(from_entered_time, datetime) else from_entered_time,
-        "toEnteredTime": to_entered_time.isoformat() if isinstance(to_entered_time, datetime) else to_entered_time
-    }
+        # print(f'004 account_hash:{account_hash}')
 
-    response = requests.get(url, headers=headers, params=params)
+        get_tokens()
+        get_account()
+        # print(f'account_hash:{account_hash}')
 
-    if response.status_code == 200:
-        return response.json()  # Return parsed JSON response
-    else:
-        print(f"930 Error: {response.status_code}, {response.text}")
-        return None
+        """Retrieve orders for a specific account from Schwab API."""
+        url = f"https://api.schwabapi.com/trader/v1/accounts/{account_hash}/orders"
+        
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {access_token}"
+        }
+        
+        params = {
+            "fromEnteredTime": from_entered_time.isoformat() if isinstance(from_entered_time, datetime) else from_entered_time,
+            "toEnteredTime": to_entered_time.isoformat() if isinstance(to_entered_time, datetime) else to_entered_time
+        }
+
+        response = requests.get(url, headers=headers, params=params)
+
+        if response.status_code == 200:
+            success_flag = True
+            return success_flag, response.json()  # Return parsed JSON response
+        else:
+            print(f"930 Error: {response.status_code}, {response.text}")
+            success_flag = False
+            return success_flag, orders_none
+        
+    except Exception as e:
+        print(f"Error in mri_schwab_lib.get_orders(): {e}")
+        success_flag = False
+
+    return success_flag, orders_none
+
+
 
 
 
@@ -548,6 +563,74 @@ def get_positions():
 
 
 
+def get_balances():
+
+    initialBalance = None
+    currentBalance = None
+
+    try:
+
+        
+        access_token = get_access_token()
+        # print(f'access_token type{type(access_token)}, data:\n{access_token}')
+
+
+
+        # Define the API URL
+        url = "https://api.schwabapi.com/trader/v1/accounts?"
+
+        # Set headers for the request
+        headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer {access_token}"
+        }
+
+        # Make the API request
+        response = requests.get(url, headers=headers)
+
+        # print(f'100 response.status_code:{response.status_code}')
+
+        if response.status_code == 200:
+            response_json = response.json()
+            # print(f'response_json:\n{response_json}')
+            # print("Formatted response_json:")
+            # print(json.dumps(response_json, indent=2))
+
+
+
+            initialBalanceFl = float(
+                response_json[0]['securitiesAccount']['initialBalances']['cashBalance']
+            )
+            currentBalanceFl = float(
+                response_json[0]['securitiesAccount']['currentBalances']['cashBalance']
+            )
+
+            initialBalance = initialBalanceFl
+            currentBalance = currentBalanceFl
+
+            # pnlFl = currentBalanceFl - initialBalanceFl
+            # pnlPercent = (pnlFl / initialBalanceFl) * 100
+
+            # print(f"initial balance today: {initialBalanceFl}, current balance: {currentBalanceFl}")
+            # print(f"P/L: {pnlFl}, {pnlPercent}%")
+
+    
+        else:
+            print("pnl response Error:", response.status_code, response.text)
+
+
+    except Exception as e:
+        print(f'error attempting to get pnl:{e}')
+        buyingPowerFl = None
+        currentFundsForTrading = None
+
+
+
+    return initialBalance, currentBalance
+
+
+
+
 
 
 def get_option_buying_power():
@@ -590,12 +673,22 @@ def get_option_buying_power():
             )
             # print(f"My Buying Power: {myBuyingPowerFl}")
 
-            initialBalanceFl = float(
-                response_json[0]['securitiesAccount']['initialBalances']['cashBalance']
-            )
-            # print(f"initial balance: {initialBalanceFl}")
 
-             
+
+
+            # initialBalanceFl = float(
+            #     response_json[0]['securitiesAccount']['initialBalances']['cashBalance']
+            # )
+            # currentBalanceFl = float(
+            #     response_json[0]['securitiesAccount']['currentBalances']['cashBalance']
+            # )
+
+            # pnlFl = currentBalanceFl - initialBalanceFl
+            # pnlPercent = (pnlFl / initialBalanceFl) * 100
+
+            # print(f"initial balance today: {initialBalanceFl}, current balance: {currentBalanceFl}")
+            # print(f"P/L: {pnlFl}, {pnlPercent}%")
+
 
             currentFundsForTrading = float(
                 response_json[0]['securitiesAccount']['currentBalances']['availableFundsNonMarginableTrade']

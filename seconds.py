@@ -66,11 +66,13 @@ import meic_config
 from datetime import datetime, time
 import pytz
 from time import sleep  # Use only for sleep, avoids conflict with datetime.time
+import market_open
 
 loop_count = 0
 last_buying_power = 0
 last_current_available = 0
 total_get_buying_power_errors = 0
+total_get_balances_errors = 0
 
 myBuyingPower, currentAvailble = mri_schwab_lib.get_option_buying_power()
 last_buying_power = myBuyingPower
@@ -93,6 +95,25 @@ while True:
     # if loop_count % 10 == 2:
     if current_secs_int % 10 == 7:
         print(f'\n')
+
+        try:
+
+            initialBalance, currentBalance = mri_schwab_lib.get_balances()
+            pnlFl = float(currentBalance - initialBalance)
+            pnlPercent = float((pnlFl / initialBalance) * 100)
+
+            print(f"\nInitial balance today: {initialBalance}, current balance: {currentBalance}")
+            print(f"P/L: {pnlFl:.2f}, {pnlPercent:.1f}%\n")
+
+        except Exception as e:
+            print(f"error getting balances: {e}")
+            initialBalance = currentBalance = None
+
+        if (initialBalance is None) or (currentBalance is None):
+            total_get_balances_errors += 1
+
+
+
         myBuyingPower, currentAvailble = mri_schwab_lib.get_option_buying_power()
 
         if myBuyingPower is None or currentAvailble is None:
@@ -133,6 +154,7 @@ while True:
         
         else:
             bp_per_remaining = 0
+  
 
         # Output results
         print(f"Total times: {len(eastern_times)}")
@@ -142,6 +164,7 @@ while True:
         print(f'cash availble per entry for remining entry times:{availble_per_remaining:.2f}')
         print(f'per entry buying power for remaining entries:{bp_per_remaining:.2f}')
         print(f'total errors getting buying power {total_get_buying_power_errors}')
+        print(f'total errors getting balances {total_get_balances_errors}')
         print(f'\n')
 
     
