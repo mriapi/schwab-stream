@@ -6,6 +6,7 @@ from email.message import EmailMessage
 from email.utils import make_msgid
 import mimetypes
 from datetime import date
+import mri_schwab_lib
 
 
 
@@ -25,6 +26,8 @@ def load_env_variables():
 
 
 def all():
+
+    mri_schwab_lib.prep_genlogs_dirs()
 
 
     display_all = ""
@@ -72,12 +75,22 @@ def all():
     #     text=True
     # )
 
+    # result_genLogs = subprocess.run(
+    #     ["node", "genLogs.js"],
+    #     capture_output=True,
+    #     text=True,
+    #     encoding="utf-8"
+    # )
+
+
     result_genLogs = subprocess.run(
-        ["node", "genLogs.js"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8"
+    ["node", "genLogs.js"],
+    cwd=r"C:\Users\mri17\Documents\repos\schwab-stream",   # <-- FIX
+    capture_output=True,
+    text=True,
+    encoding="utf-8"
     )
+
 
     # print("genLogs output:", result_genLogs.stdout, flush=True)
     disp_str = f'genLogs output: {result_genLogs.stdout}'
@@ -85,11 +98,9 @@ def all():
     display_all = display_all + disp_str + "\n"
 
 
-
-
     if len(result_genLogs.stderr) > 0:
         # print("genLogs STDERR:", result_genLogs.stderr, flush=True)
-        disp_str = f'genLogs STDERR: {result_genLogs.stderr}'
+        disp_str = f'350682 genLogs STDERR: {result_genLogs.stderr}'
         print(disp_str)
         display_all = display_all + disp_str + "\n"
 
@@ -108,8 +119,8 @@ def all():
 
 
 
-    # receiver_email = ["mri1700@gmail.com"]
-    receiver_email = ["mri1700@gmail.com", "rudy.isaacson@gmail.com", "scottike@gmail.com"]
+    receiver_email = ["mri1700@gmail.com"]
+    # receiver_email = ["mri1700@gmail.com", "rudy.isaacson@gmail.com", "scottike@gmail.com"]
 
 
 
@@ -133,9 +144,6 @@ def all():
     #     print("Email sent successfully!")
     # except Exception as e:
     #     print(f"Failed to send email: {e}")
-
-
-
 
 
 
@@ -198,6 +206,13 @@ def all():
 
     # End of all()
 
+
+# spx_candle = mri_schwab_lib.get_spx_today_ohlc()
+# # print(f'33050 spx_day_ohlc type:{type(spx_candle)}, data:\n{spx_candle}')
+# mri_schwab_lib.prep_genlogs_dirs()
+# mri_schwab_lib.persist_spx_candle(spx_candle)
+# time_str = "09:14:49"
+# mri_schwab_lib.persist_early_indicator(time_str)
 # display = all()
 
 

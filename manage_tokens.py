@@ -1086,23 +1086,29 @@ def get_tokens():
             report_token_warning_time == EMAIL_TIME_STR_1 or
             report_token_warning_time == EMAIL_TIME_STR_2
         ):
+            try:
             
+                # info_str = f'!!!!! refresh token has EXPIRED !!!!!'
+                info_str_body = f'!!! {current_date_str} {current_time_str} refresh token expired: {refresh_days_left:.1f} days !!!'
+                info_str_sub = f'!!! refresh token expired: {refresh_days_left:.1f} days !!!'
+            
+                print(f'2 {info_str_sub}')
 
-            info_str = f'!!!!! refresh token has EXPIRED !!!!!'
-            print(f'2 {info_str}')
+                receiver_email = "mri1700@gmail.com"
 
-            receiver_email = "mri1700@gmail.com"
+                # subject_str = f" {current_time_str}"
 
-            # subject_str = f" {current_time_str}"
+                # Create the email
+                msg = EmailMessage()
+                # msg.set_content("Daily results test")
+                msg.set_content(info_str_body)
+                # msg['Subject'] = subject_str
+                msg['Subject'] = info_str_sub
+                msg['From'] = my_gmail_user
+                msg['To'] = receiver_email
 
-            # Create the email
-            msg = EmailMessage()
-            # msg.set_content("Daily results test")
-            msg.set_content(info_str)
-            # msg['Subject'] = subject_str
-            msg['Subject'] = info_str
-            msg['From'] = my_gmail_user
-            msg['To'] = receiver_email
+            except Exception as e:
+                print(f"exception setting up refresh expired email: {e}")
 
             try:
                 # Send the email using Gmail's SMTP server

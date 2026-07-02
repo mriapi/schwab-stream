@@ -14,6 +14,7 @@ import argparse
 import mri_schwab_lib
 import plotly.graph_objects as go
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 
@@ -302,6 +303,81 @@ def save_orders_to_json(orders):
     with open(json_file_path, 'w') as json_file:
         json.dump(orders, json_file, indent=4)  
 
+
+
+
+def create_return_dial(return_on_acct: float, filename: str = "balances_gauge.png"):
+    # Clamp value to range [-3, 3]
+    value = max(-3, min(3, return_on_acct))
+
+    fig, ax = plt.subplots(figsize=(3, 2))
+    ax.set_aspect('equal')
+    ax.axis('off')
+
+    # Map value (-3 to 3) → angle (180° to 0°)
+    def value_to_angle(v):
+        return 180 - (v + 3) * (180 / 6)
+
+    # Draw colored arc segments
+    segments = [
+        (-3, -0.25, 'red'),
+        (-0.25, 0.25, 'yellow'),
+        (0.25, 3, 'green')
+    ]
+
+    for start, end, color in segments:
+        angles = np.linspace(value_to_angle(start), value_to_angle(end), 100)
+        x = np.cos(np.radians(angles))
+        y = np.sin(np.radians(angles))
+        ax.plot(x, y, lw=15, color=color, solid_capstyle='butt')
+
+    # Draw tick marks (every 0.5)
+    ticks = np.linspace(-3, 3, 13)
+    for t in ticks:
+        angle = value_to_angle(t)
+        x_outer = np.cos(np.radians(angle))
+        y_outer = np.sin(np.radians(angle))
+        x_inner = 0.9 * x_outer
+        y_inner = 0.9 * y_outer
+        ax.plot([x_inner, x_outer], [y_inner, y_outer], color='black', lw=1)
+
+    # Label major ticks
+    major_labels = [-3, -2, -1, 0, 1, 2, 3]
+    for t in major_labels:
+        angle = value_to_angle(t)
+        x = 1.15 * np.cos(np.radians(angle))
+        y = 1.15 * np.sin(np.radians(angle))
+        ax.text(x, y, f"{t}", ha='center', va='center', fontsize=8)
+
+    # Title above dial
+    # ax.text(0, 1.25, "% Daily Return On Account", ha='center', va='center', fontsize=10)
+    ax.text(0, 1.32, "% Daily Return On Account", ha='center', va='center', fontsize=10)
+
+    # Needle pivot (bottom center)
+    pivot = np.array([0, 0])
+
+    # Needle
+    angle = value_to_angle(value)
+    needle_length = 0.9
+    x_end = needle_length * np.cos(np.radians(angle))
+    y_end = needle_length * np.sin(np.radians(angle))
+
+    ax.plot([pivot[0], x_end], [pivot[1], y_end], color='black', lw=2)
+    ax.add_patch(plt.Circle(pivot, 0.05, color='black'))
+
+    # Display value below pivot
+    ax.text(0, -0.2, f"{value:.2f}%", ha='center', va='center', fontsize=9)
+
+    # Frame limits
+    ax.set_xlim(-1.3, 1.3)
+    # ax.set_ylim(-0.3, 1.3)
+    ax.set_ylim(-0.3, 1.4)
+
+    # Save image
+    plt.savefig(filename, bbox_inches='tight')
+    plt.close(fig)
+
+
 def my_get_balances(activity_date):
 
     retry_cnt = 0
@@ -397,119 +473,135 @@ def my_get_balances(activity_date):
 
 
 
+    # -----------------------------
+    # Load Data
+    # -----------------------------
     df = pd.read_csv(csv_file_spec)
-    
     print(f'df:\n{df}')
-
 
     pnl = df["pnlPercent"].iloc[0]
 
-    min_val = -3
-    max_val = 3
+    pnl = float(pnl)
 
-    # -----------------------------
-    # Create Gauge
-    # -----------------------------
-
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=pnl,
-        number={
-            'suffix': '%',
-            'valueformat': '.2f',
-            'font': {'size': 28}
-        },
-        gauge={
-            'axis': {'range': [min_val, max_val], 'tickfont': {'size': 16}},
-            'bar': {'color': "rgba(0,0,0,0)"},  # hide default bar
-            # 'steps': [
-            #     {'range': [-2.0, -0.3], 'color': "red"},
-            #     {'range': [-0.3, 0.3], 'color': "yellow"},
-            #     {'range': [0.3, 2.0], 'color': "green"},
-            # ],
-
-            'steps': [
-                {'range': [-3.0, -0.3], 'color': "red"},
-                {'range': [-0.3, 0.3], 'color': "yellow"},
-                {'range': [0.3, 3.0], 'color': "green"},
-            ],
-        }
-    ))
+    create_return_dial(pnl,"balances_gauge.png")
 
 
 
-    # -----------------------------
-    # Needle Geometry
-    # -----------------------------
 
-    # True center of semicircle in paper coordinates
-    x_center = 0.5
-    y_center = 0.21   # critical fix — move pivot downward
+    # # pnl = -3.0
 
-    # Convert pnl value to angle (180° semicircle)
-    angle = (pnl - min_val) / (max_val - min_val) * 180
-    theta = np.deg2rad(180 - angle)
+    # min_val = -3
+    # max_val = 3
 
-    # Needle length
-    r = 0.48
+    # # -----------------------------
+    # # Create Gauge
+    # # -----------------------------
+    # fig = go.Figure(go.Indicator(
+    #     mode="gauge+number",
+    #     value=pnl,
+    #     number={
+    #         'suffix': '%',
+    #         'valueformat': '.2f',
+    #         'font': {'size': 28}
+    #     },
+    #     gauge={
+    #         'axis': {
+    #             'range': [min_val, max_val],
+    #             'tickfont': {'size': 16}
+    #         },
+    #         'bar': {'color': "rgba(0,0,0,0)"},
+    #         'steps': [
+    #             {'range': [min_val, -0.3], 'color': "red"},
+    #             {'range': [-0.3, 0.3], 'color': "yellow"},
+    #             {'range': [0.3, max_val], 'color': "green"},
+    #         ],
+    #     }
+    # ))
 
-    x_tip = x_center + r * np.cos(theta)
-    y_tip = y_center + r * np.sin(theta)
+    # # -----------------------------
+    # # Needle Geometry (FIXED)
+    # # -----------------------------
 
-    # -----------------------------
-    # Add Needle
-    # -----------------------------
-    fig.add_shape(
-        type="line",
-        x0=x_center, y0=y_center,
-        x1=x_tip, y1=y_tip,
-        line=dict(color="black", width=4)
-    )
+    # # Horizontal center is correct
+    # x_center = 0.5
 
-    # -----------------------------
-    # Add Center Hub
-    # -----------------------------
-    hub_size = 0.02
+    # # ✅ FIX: move pivot BELOW arc (true circle center)
+    # y_center = 0.22   # tweak 0.20–0.25 if needed depending on layout
 
-    fig.add_shape(
-        type="circle",
-        x0=x_center - hub_size,
-        y0=y_center - hub_size,
-        x1=x_center + hub_size,
-        y1=y_center + hub_size,
-        fillcolor="black",
-        line_color="black"
-    )
+    # # Needle length (fits arc)
+    # r = 0.48
 
-    # -----------------------------
-    # Final Layout
-    # -----------------------------
-    fig.update_layout(
-        height=400,
-        width=600,
-        margin=dict(l=40, r=40, t=40, b=40)
-    )
+    # # Plotly gauge doesn't span full 180°
+    # SWEEP = 150  # stable across ranges
 
-    fig.add_annotation(
-        text="<b>% Daily Return On Account</b>",
-        x=0.5,
-        y=1.08,          # slightly above gauge
-        xref="paper",
-        yref="paper",
-        showarrow=False,
-        font=dict(size=20)
-    )
+    # # Normalize pnl → 0..1
+    # t = (pnl - min_val) / (max_val - min_val)
+    # t = max(0, min(1, t))  # clamp
+
+    # # Map to angle
+    # theta_deg = 180 - ((180 - SWEEP) / 2 + t * SWEEP)
+    # theta = np.deg2rad(theta_deg)
+
+    # # Needle tip
+    # x_tip = x_center + r * np.cos(theta)
+    # y_tip = y_center + r * np.sin(theta)
+
+    # # -----------------------------
+    # # Add Needle
+    # # -----------------------------
+    # fig.add_shape(
+    #     type="line",
+    #     x0=x_center, y0=y_center,
+    #     x1=x_tip, y1=y_tip,
+    #     line=dict(color="black", width=4)
+    # )
+
+    # # -----------------------------
+    # # Add Center Hub
+    # # -----------------------------
+    # hub_size = 0.02
+
+    # fig.add_shape(
+    #     type="circle",
+    #     x0=x_center - hub_size,
+    #     y0=y_center - hub_size,
+    #     x1=x_center + hub_size,
+    #     y1=y_center + hub_size,
+    #     fillcolor="black",
+    #     line_color="black"
+    # )
+
+    # # -----------------------------
+    # # Final Layout
+    # # -----------------------------
+    # fig.update_layout(
+    #     height=400,
+    #     width=600,
+    #     margin=dict(l=40, r=40, t=40, b=40)
+    # )
+
+    # fig.add_annotation(
+    #     text="<b>% Daily Return On Account</b>",
+    #     x=0.5,
+    #     y=1.08,
+    #     xref="paper",
+    #     yref="paper",
+    #     showarrow=False,
+    #     font=dict(size=20)
+    # )
+
+    # # -----------------------------
+    # # Save Image
+    # # -----------------------------
+    # gauge_png_file_spec = 'balances_gauge.png'
+    # fig.write_image(gauge_png_file_spec)
+
+    # # fig.show()
 
 
-    gauge_png_file_spec = os.path.join(log_file_dir, 'balances_gauge.png')
-    gauge_png_file_spec = 'balances_gauge.png'
 
 
-    # fig.write_image("balances_gauge.png")
-    fig.write_image(gauge_png_file_spec)
-    # fig.show()
 
-    
 
         
 
