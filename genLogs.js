@@ -11,6 +11,8 @@ const path = require("path");
 // const SPX_HOME = "C:\MEIC\log\"
 const SPX_HOME = "C:\\MEIC\\log";
 
+// const SPX_WHO = process.env.SPX_WHO ?? 'ikebot'
+const SPX_WHO = process.env.SPX_WHO ?? 'markbot_pc'
 
 let DATE
 let OUTPUT_TYPE
@@ -60,21 +62,21 @@ monitor()
 function getOrders() {
 
     // get all orders
-    // const ordersFile = SPX_HOME + '/' + DATE + '/transactions/orders-' + DATE + '.json'
+    // TEST MACOS
+    // const ordersFile = '/Users/scottike/Downloads/' + 'o10.json'
 
+    // const ordersFile = SPX_HOME + '/' + DATE + '/transactions/orders-' + DATE + '.json'
     const ordersFile = SPX_HOME + "\\" + DATE + "\\" + "orders.json"
-    // console.log("updated ordersFile:<" + ordersFile + ">")
 
     try {
         const fileData = fs.readFileSync(ordersFile, 'utf8')
         const data = JSON.parse(fileData)
         data.forEach((_o) => {
-            // console.log("displaying _o:" + _o)
+
             processOrder(_o)
         })
-        // console.log("orders file processing successful")
-
     } catch (err) {
+        console.log(err)
         console.log("No Orders")
     }
 
@@ -84,23 +86,21 @@ function getTransactions() {
 
     // get all transactions
     let tc = 0
+    // TEST MACOS
+    // const transFile = '/Users/scottike/Downloads/' + 't10.json'
     // const transFile = SPX_HOME + '/' + DATE + '/transactions/transactions-' + DATE + '.json'
-
     const transFile = SPX_HOME + "\\" + DATE + "\\" + "transactions.json"
-    // console.log("updated transFile:<" + transFile + ">")
-
-
-
-
 
     try {
         const fileData = fs.readFileSync(transFile, 'utf8')
         const data = JSON.parse(fileData)
         data.forEach((_t) => {
             tc++
+            //console.log(JSON.stringify(_t, null, 2))
             processTransaction(_t)
         })
     } catch (err) {
+        console.log(err)
         console.log("No Transactions")
     }
     // console.log('tc = ' + tc)
@@ -110,7 +110,16 @@ function getTransactions() {
 function processITMs() {
 
     // get SPX closing
-    const spxFile = SPX_HOME + '/' + DATE + '/transactions/spx-' + DATE + '.json'
+    // TEST MACOS
+    // const spxFile = '/Users/scottike/Downloads/' + 's10.json'
+    const spxFile_s = SPX_HOME + '/' + DATE + '/transactions/spx-' + DATE + '.json'
+    spxFile = spxFile_s
+    // console.log('spxFile_s = ' + spxFile)
+    const spxFile_m = SPX_HOME + "\\" + DATE + "\\" + "transactions" + "\\" +  "spx-" + DATE + ".json"
+    spxFile = spxFile_m
+    // console.log('spxFile_m = ' + spxFile)
+
+
     try {
         const fileData = fs.readFileSync(spxFile, 'utf8')
         let data = undefined
@@ -120,14 +129,14 @@ function processITMs() {
             data = undefined
         }
         if (!data || data.empty || !data.candles || !data.candles[0] || !data.candles[0].close) {
-            SPX_CLOSE = undefined
+             SPX_CLOSE = undefined
         } else {
             SPX_CLOSE = data.candles[0].close
         }
 
     } catch (err) {
-        // console.log("No SPX CLOSE data")
-        console.log("")
+        console.log(err)
+        console.log("No SPX CLOSE data")
     }
 
      if (SPX_CLOSE) {
@@ -182,12 +191,12 @@ function processITMs() {
 
 
 function getOpts() {
-    const args = process.argv.slice(2);
+    let args = process.argv.slice(2)
 
     if (args[0]) {
-        DATE = args[0];
-        console.log('Provided Date: ' + DATE);
-    } else {
+        DATE = args[0]
+    } 
+    else {
         const now = new Date();
         const yyyy = now.getFullYear();
         const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -195,29 +204,34 @@ function getOpts() {
         DATE = `${yyyy}-${mm}-${dd}`;
         // console.log('Defaulting to current Date: ' + DATE);
     }
+    // } else {
+    //     console.error('No Date')
+    //     return
+    // }
 
-    OUTPUT_TYPE = 'TEXT';
+    OUTPUT_TYPE = 'TEXT'
     if (args[1]) {
         if (args[1] === 'CSV') {
-            OUTPUT_TYPE = 'CSV';
+            OUTPUT_TYPE = 'CSV'
         }
     }
 
-    SELECTION = 'ALL';
+    SELECTION = 'ALL'
     if (args[2]) {
         if (args[2] === 'ALL') {
-            SELECTION = 'ALL';
+            SELECTION = 'ALL'
         }
         if (args[2] === 'ICS') {
-            SELECTION = 'ICS';
+            SELECTION = 'ICS'
         }
         if (args[2] === 'SUMMARY') {
-            SELECTION = 'SUMMARY';
+            SELECTION = 'SUMMARY'
         }
         if (args[2] === 'SPREADS') {
-            SELECTION = 'SPREADS';
+            SELECTION = 'SPREADS'
         }
     }
+
 }
 
 function dumpData() {
@@ -380,6 +394,8 @@ function getRecommendationInfoAtTime(time) {
     let recommendationInfo = {
         putSpreadLimit: undefined,
         callSpreadLimit: undefined,
+        putShortStop: undefined,
+        callShortStop: undefined,
         underlying: {
             spxLast: undefined,
             em: undefined
@@ -389,16 +405,17 @@ function getRecommendationInfoAtTime(time) {
         const recommendationData = fs.readFileSync(recommendationFileName, 'utf8')
         recommendation = JSON.parse(recommendationData)
     } catch (err) {
-        // console.log("No Recommendation")
         return recommendationInfo
     }
     if (!recommendation) {
-        // console.log("No Recommendation")
         return recommendationInfo
     }
+
     recommendationInfo = {
         putSpreadLimit: Number(Number(recommendation.ic.putLimit).toFixed(2)),
         callSpreadLimit: Number(Number(recommendation.ic.callLimit).toFixed(2)),
+        putShortStop: Number(Number(recommendation.ic.putShortStop).toFixed(2)),
+        callShortStop: Number(Number(recommendation.ic.callShortStop).toFixed(2)),
         underlying: {
             spxLast: Number(Number(recommendation.underlying.last).toFixed(0)),
             em: Number(Number(recommendation.underlying.em).toFixed(1))
@@ -423,13 +440,16 @@ function processOrder(order) {
 
     const o = order
 
+    // console.log(JSON.stringify(o, null, 2))
+
     // adjust the time
     let adjustedDate = fixTime(o.enteredTime)
     let time = convertTimeTime(adjustedDate)
 
     let recommendationInfo = getRecommendationInfoAtTime(time)
 
-    // We found an IC, process it and add it to the ICs, account for mor than one contract
+
+    // We found an IC, process it and add it to the ICs, account for more than one contract
     if (o.orderType === 'NET_CREDIT' && o.complexOrderStrategyType === 'IRON_CONDOR' && o.status === 'FILLED' && o.orderStrategyType === 'TRIGGER') {
 
         if (!o.childOrderStrategies || !o.childOrderStrategies[0] || !o.childOrderStrategies[1]) {
@@ -449,7 +469,7 @@ function processOrder(order) {
                 longStopOrderId: -1,
                 pl: 0,
                 shortStopped: false,
-                stopPrice: 0,
+                stopPrice: recommendationInfo.putShortStop,
                 shortBTC: 0,
                 longSTC: 0,
                 shortBTCFees: 0,
@@ -470,8 +490,6 @@ function processOrder(order) {
                 spreadNetCredit: 0,
                 shortSymbol: undefined,
                 longSymbol: undefined
-                // ,
-                // quantity: 0
             }
 
             let callSpread = {
@@ -484,7 +502,7 @@ function processOrder(order) {
                 longStopOrderId: -1,
                 pl: 0,
                 shortStopped: false,
-                stopPrice: 0,
+                stopPrice: recommendationInfo.callShortStop,
                 shortBTC: 0,
                 longSTC: 0,
                 shortBTCFees: 0,
@@ -505,8 +523,6 @@ function processOrder(order) {
                 spreadNetCredit: 0,
                 shortSymbol: undefined,
                 longSymbol: undefined
-                // ,
-                // quantity: 0
             }
 
             let ic = {
@@ -530,7 +546,7 @@ function processOrder(order) {
                 let instruction = leg.instruction
                 let effect = leg.positionEffect
                 let orderType = leg.orderType
-                // orderStatus = FILLED, EXPIRED, REJECTED, CANCELED, AWAITING_PARENT_ORDER, REPLACED, WORKINGG
+                // orderStatus = FILLED, EXPIRED, REJECTED, CANCELED, AWAITING_PARENT_ORDER, REPLACED, WORKING
                 let orderStatus = leg.status
 
                 let option
@@ -561,23 +577,23 @@ function processOrder(order) {
 
             o.childOrderStrategies.forEach((child) => {
 
-                let childShortStop = child.orderLegCollection[0]
-                let childOrderStatus = child.status
-                let childChild = child.childOrderStrategies[0]
+                if (child.status != "REJECTED") {
 
-                if (childShortStop.instrument.symbol === ic.putSpread.shortSymbol && !hasSubsequentOrder(childOrderStatus)) {
-                    ic.putSpread.shortStopOrderId = child.orderId
-                    ic.putSpread.longStopOrderId = childChild.orderId
-                    ic.putSpread.stopPrice = child.stopPrice
-                    // ic.putSpread.quantity = child.quantity
-                }
-                if (childShortStop.instrument.symbol === ic.callSpread.shortSymbol && !hasSubsequentOrder(childOrderStatus)) {
-                    ic.callSpread.shortStopOrderId = child.orderId
-                    ic.callSpread.longStopOrderId = childChild.orderId
-                    ic.callSpread.stopPrice = child.stopPrice
-                    // ic.callSpread.quantity = child.quantity
-                }
+                    let childShortStop = child.orderLegCollection[0]
+                    let childOrderStatus = child.status
+                    let childChild = child.childOrderStrategies[0]
 
+                    if (childShortStop.instrument.symbol === ic.putSpread.shortSymbol && !hasSubsequentOrder(childOrderStatus)) {
+                        ic.putSpread.shortStopOrderId = child.orderId
+                        ic.putSpread.longStopOrderId = childChild.orderId
+                        ic.putSpread.stopPrice = child.stopPrice
+                    }
+                    if (childShortStop.instrument.symbol === ic.callSpread.shortSymbol && !hasSubsequentOrder(childOrderStatus)) {
+                        ic.callSpread.shortStopOrderId = child.orderId
+                        ic.callSpread.longStopOrderId = childChild.orderId
+                        ic.callSpread.stopPrice = child.stopPrice
+                    }
+                }
             })
 
             ics.push(ic)
@@ -588,15 +604,58 @@ function processOrder(order) {
     }
 
 
-    if ( (o.orderType === 'MARKET' || o.orderType === 'LIMIT') && (o.complexOrderStrategyType === 'CUSTOM' || o.complexOrderStrategyType === 'NONE') && o.status === 'FILLED') {
+    if ( (o.orderType === 'MARKET' || o.orderType === 'LIMIT' || o.orderType === 'MARKET_ON_CLOSE') && (o.complexOrderStrategyType === 'CUSTOM' || o.complexOrderStrategyType === 'NONE') && o.status === 'FILLED') {
 
         o.orderLegCollection.forEach((leg) => {
 
             for (let l = 0; l < leg.quantity; l++) {
+
+                let earlyOrder = {
+                    symbol: leg.instrument.symbol,
+                    orderId: o.orderId,
+                    instruction: leg.instruction,
+                    time: time,
+                    putCall: leg.instrument.putCall
+                }
+                earlyOrders.push(earlyOrder)
+            }
+        })
+    }
+
+    // noinspection JSUnresolvedVariable
+    //             {
+    //                 "orderLegType": "OPTION",
+    //                 "instrument": {
+    //                     "assetType": "OPTION",
+    //                     "symbol": "SPXW  260528P07540000",
+    //                     "putCall": "PUT"
+    //                 },
+    //                 "instruction": "BUY_TO_CLOSE",
+    //                 "positionEffect": "CLOSING",
+    //                 "quantity": 2.0
+    //             },
+    //             {
+    //                 "orderLegType": "OPTION",
+    //                 "instrument": {
+    //                     "assetType": "OPTION",
+    //                     "symbol": "SPXW  260528P07490000",
+    //                     "putCall": "PUT"
+    //                 },
+    //                 "instruction": "SELL_TO_CLOSE",
+    //                 "positionEffect": "CLOSING",
+    //                 "quantity": 2.0
+    //             }
+    if ( o.orderType === 'MARKET' && o.complexOrderStrategyType === 'VERTICAL' && o.status === 'FILLED') {
+
+        o.orderLegCollection.forEach((leg) => {
+
+            for (let l = 0; l < leg.quantity; l++) {
+
+                let ois = leg.instruction === 'BUY_TO_CLOSE' ? 'S' : 'L'
                 let earlyOrder = {
                     symbol: leg.instrument.symbol,
                     instruction: leg.instruction,
-                    orderId: o.orderId,
+                    orderId: o.orderId + ois,
                     time: time,
                     putCall: leg.instrument.putCall
                 }
@@ -620,6 +679,7 @@ function processTransaction(transaction) {
 
         let symbol
         let netAmount
+        let buyOrSell
         let putCall
         let strike
         let position
@@ -639,6 +699,7 @@ function processTransaction(transaction) {
                 symbol = item.instrument.symbol
                 amount = Math.abs(item.amount)
                 netAmount = Math.abs(Number(t.netAmount) / amount) / 100
+                buyOrSell = Number(t.netAmount) > 0 ? 'SELL' : 'BUY'
                 putCall = item.instrument.putCall
                 strike = symbolToStrike(symbol)
                 position = item.positionEffect
@@ -647,7 +708,6 @@ function processTransaction(transaction) {
                 filledPrice = Number(item.price)
                 fees = Math.abs(Math.abs(Number(item.price * 100) * amount) - Math.abs(Number(t.netAmount)))
                 fees = fees / amount
-
             }
         })
 
@@ -655,6 +715,7 @@ function processTransaction(transaction) {
             let entry = {
                 symbol: symbol,
                 netAmount: netAmount,
+                buyOrSell: buyOrSell,
                 putCall: putCall,
                 strike: strike,
                 position: position,
@@ -725,7 +786,7 @@ function matchTransactions() {
                 }
             }
 
-            if (_t.orderId === putShortStopOrderId && !found && !_i.putSpread.filledShortBTC) {
+            if ( ((_t.orderId + 'S') === putShortStopOrderId || (_t.orderId === putShortStopOrderId)) && _t.buyOrSell === 'BUY' && !found && !_i.putSpread.filledShortBTC) {
                 _i.putSpread.status = _i.putSpread.isEarly ? 'EARLY' : 'STOPPED'
                 _i.putSpread.shortBTC =  Number(Number( Math.abs(_t.filledPrice)).toFixed(2))
                 _i.putSpread.shortBTCFees = Number(_t.fees)
@@ -736,14 +797,14 @@ function matchTransactions() {
                 found = true
             }
 
-            if (_t.orderId === putLongStopOrderId && !found && !_i.putSpread.filledLongSTC) {
+            if ( ((_t.orderId + 'L') === putLongStopOrderId  || (_t.orderId === putLongStopOrderId)) && _t.buyOrSell === 'SELL' && !found && !_i.putSpread.filledLongSTC) {
                 _i.putSpread.longSTC =  Number(Number( Math.abs(_t.filledPrice)).toFixed(2))
                 _i.putSpread.longSTCFees =  Number(_t.fees).toFixed(2)
                 _i.putSpread.filledLongSTC = true
                 found = true
             }
 
-            if (_t.orderId === callShortStopOrderId && !found && !_i.callSpread.filledShortBTC) {
+            if ( ((_t.orderId + 'S') === callShortStopOrderId || (_t.orderId === callShortStopOrderId)) && _t.buyOrSell === 'BUY' && !found && !_i.callSpread.filledShortBTC) {
                 _i.callSpread.status = _i.callSpread.isEarly ? 'EARLY' : 'STOPPED'
                 _i.callSpread.shortBTC =  Number(Number( Math.abs(_t.filledPrice)).toFixed(2))
                 _i.callSpread.shortBTCFees = Number(_t.fees)
@@ -754,7 +815,7 @@ function matchTransactions() {
                 found = true
             }
 
-            if (_t.orderId === callLongStopOrderId && !found && !_i.callSpread.filledLongSTC) {
+            if ( ((_t.orderId + 'L') === callLongStopOrderId  || (_t.orderId === callLongStopOrderId)) && _t.buyOrSell === 'SELL' && !found && !_i.callSpread.filledLongSTC) {
                 _i.callSpread.longSTC =  Number(Number( Math.abs(_t.filledPrice)).toFixed(2))
                 _i.callSpread.longSTCFees =  Number(_t.fees).toFixed(2)
                 _i.callSpread.filledLongSTC = true
@@ -778,25 +839,26 @@ function matchTransactions() {
 }
 
 
+function isBeforeMarketOpenET(date) {
 
-function isBeforeMarketOpenET() {
     // Convert current moment into Eastern Time
-    let nowET = new Date(
-        new Date().toLocaleString("en-US", { timeZone: "America/New_York" })
-    );
+    let dateET = new Date (
+        date.toLocaleString("en-US", { timeZone: "America/New_York" })
+    )
 
-    let hourET = nowET.getHours();
-    let minuteET = nowET.getMinutes();
+    let hourET = dateET.getHours()
+    let minuteET = dateET.getMinutes()
 
     // Market opens at 9:30 AM ET
-    const cutoffHour = 9;
-    const cutoffMinute = 30;
+    const cutoffHour = 9
+    const cutoffMinute = 30
 
     // Return true if ET time is earlier than 9:30 AM
     return (
         hourET < cutoffHour ||
         (hourET === cutoffHour && minuteET < cutoffMinute)
-    );
+    )
+
 }
 
 
@@ -805,67 +867,19 @@ function fixTime (timeStamp) {
     // this converts to local time since time stamp is in UTC
     const date = new Date(timeStamp)
 
-    const hours = date.getHours()
-    const minutes = date.getMinutes()
-
-    // let timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
-    // let startHour = 14
-    // if (timezone === 'America/Los_Angeles') {
-    //     if (isDaylightSavingTime()) {
-    //         startHour = 7
-    //     } else {
-    //         startHour = 8
-    //     }
-    // }
-    // if (timezone === 'America/Denver') {
-    //     if (isDaylightSavingTime()) {
-    //         startHour = 6
-    //     } else {
-    //         startHour = 7
-    //     }
-    // }
-    // if (timezone === 'America/Boise') {
-    //     if (isDaylightSavingTime()) {
-    //         startHour = 6
-    //     } else {
-    //         startHour = 7
-    //     }
-    // }
-
-
-    // // everything before <startHour>:30 is really from the day before
-    // if (hours < startHour || (hours === startHour && minutes < 30)) {
-    //     date.setHours(23, 59, 59, 0)
-    //     date.setDate(date.getDate() - 1)
-    // }
-
-
-
-    if (isBeforeMarketOpenET()) {
-        // console.log("ET time is earlier than 9:30 AM. changing date stamp");
+    if (isBeforeMarketOpenET(date)) {
         date.setHours(23, 59, 59, 0)
         date.setDate(date.getDate() - 1)
     } else {
-        // console.log("ET time is 9:30 AM or later");
     }
 
+    // console.log('USING TIME: ' + String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0') + ':' + String(date.getSeconds()).padStart(2, '0'))
     return date
-}
-
-
-function isDaylightSavingTime() {
-    const now = new Date();
-    const janOffset = new Date(now.getFullYear(), 0, 1).getTimezoneOffset();  // January (Standard Time)
-    const julOffset = new Date(now.getFullYear(), 6, 1).getTimezoneOffset();  // July (DST for most regions)
-
-    return now.getTimezoneOffset() < Math.max(janOffset, julOffset);
 }
 
 
 
 function convertTimeDate (date) {
-
-//    const date = new Date(timeStamp)
 
     const mstDate = new Intl.DateTimeFormat("en-US", {
         timeZone: "America/Denver",
@@ -907,13 +921,12 @@ function symbolToOption (symbol) {
     return option
 }
 
-function OptionToSymbol (option) {
-
-    // 'SPXW  250411P05295000'
-    const shortDate = '250417'
-    let symbol = 'SPXW  ' + shortDate + (option.putCall === 'PUT' ? 'P' : 'C') + '0' + String(option.strike) + '000'
-    return symbol
-}
+// function OptionToSymbol (option) {
+//
+//     const shortDate = '250417'
+//     let symbol = 'SPXW  ' + shortDate + (option.putCall === 'PUT' ? 'P' : 'C') + '0' + String(option.strike) + '000'
+//     return symbol
+// }
 
 
 
@@ -937,119 +950,7 @@ function isAfter(time1, time2) {
 }
 
 
-function getSPXAtTime(time) {
 
-    let dataDir = SPX_HOME + '/' + DATE + '/data'
-
-    let spxs = []
-    let files = getFilesInDirectory(dataDir)
-    let times = []
-    files.forEach((fileName) => {
-        let time = path.basename(fileName, path.extname(fileName)).replace(/-/g, ':')
-        let entry = {
-            time: time,
-            file: fileName
-        }
-        times.push(entry)
-    })
-
-    let foundTime
-    times.forEach((timeObject) => {
-        if (compareTimeEarlier(timeObject.time, time)) {
-
-        } else {
-            if (!foundTime) {
-                foundTime = timeObject
-            }
-        }
-    })
-
-    let spx
-    if (foundTime) {
-        spx = getSPX(foundTime.file)
-    }
-
-    let returnObject = spx
-    return returnObject
-}
-
-function getFilesInDirectory(dirPath) {
-    try {
-        // Read directory contents
-        const files = fs.readdirSync(dirPath)
-
-        // Map files with full path and filter only regular files (not directories)
-        const fileList = files
-            .map(file => path.join(dirPath, file))
-            .filter(file => fs.statSync(file).isFile())
-            .filter(file => !(file.endsWith('now.json')))
-        return fileList
-    } catch (error) {
-        console.error('Error reading getFilesInDirectory directory:', error)
-        return []
-    }
-}
-
-function compareTimeEarlier(time1, time2) {
-    const parts1 = time1.split(':')
-    const parts2 = time2.split(':')
-    if (Number(parts1[0]) < Number(parts2[0])) {
-        return true
-    }
-    if (Number(parts1[0]) == Number(parts2[0]) && Number(parts1[1]) < Number(parts2[1])) {
-        return true
-    }
-    if (Number(parts1[0]) == Number(parts2[0]) && Number(parts1[1]) == Number(parts2[1]) && Number(parts1[2]) < Number(parts2[2])) {
-        return true
-    }
-    return false
-}
-
-function getSPX(filename) {
-
-    let data
-    try {
-        data = fs.readFileSync(filename, 'utf8')
-    } catch (err) {
-        console.error(err)
-    }
-
-    let spxLast
-    let spxTime
-
-    if (data) {
-
-        // Parse the JSON data
-        const jsonData = JSON.parse(data)
-
-        spxLast = jsonData.underlying.last
-        spxTime = getTimeStringColon(new Date(jsonData.underlying.quoteTime))
-
-        let returnObject
-        returnObject = {
-            time: spxTime,
-            spx: Number(spxLast)
-        }
-        return returnObject
-    }
-
-    return undefined
-
-}
-
-function getTimeStringColon(date) {
-    const p = new Intl.DateTimeFormat('en', {
-        hour:'2-digit',
-        minute:'2-digit',
-        second:'2-digit',
-        hour12: false
-    }).formatToParts(date).reduce((acc, part) => {
-        acc[part.type] = part.value;
-        return acc;
-    }, {});
-
-    return `${p.hour}:${p.minute}:${p.second}`
-}
 
 
 function getRecommendationForOrder(time) {
@@ -1059,18 +960,13 @@ function getRecommendationForOrder(time) {
     let found
 
     files.forEach((file) => {
-        let fileName = file.split('/').pop();
-
-        // Ensure the file name starts with "recommendation"
-        if (fileName.startsWith("recommendation")) {
-            let fileTime = fileName.split('.')[0];
-            fileTime = fileTime.replace("recommendation-", "").replace(/-/g, ":");
-
-            if (withinMinutes(1, time, fileTime)) {
-                found = file;
-            }
+        let fileName = file.split('/').pop()
+        let fileTime =  fileName.split('.')[0]
+        fileTime = fileTime.replace("recommendation-", "").replace(/-/g, ":")
+        if (withinMinutes(1, time, fileTime)) {
+            found = file
         }
-    });
+    })
 
     return found
 }
@@ -1080,14 +976,13 @@ function getFilesInRecommendationsDirectory() {
 
     try {
         // Read directory contents
-        // let dirPath = SPX_HOME + '/' + DATE + '/omeic/tos/recommendations'
+        let dirPath = SPX_HOME + '/' + DATE + '/omeic/tos/recommendations'
+        // console.log("dirPath1:" + dirPath)
+        dirPath = SPX_HOME + "\\" + DATE + "\\" + "omeic" + "\\" + "tos" + "\\" + "recommendations"
+        // console.log("dirPath2:" + dirPath)
 
-        let dirPath = SPX_HOME + "\\" + DATE
-        // console.log("updated dirPath:<" + dirPath + ">")
-
-
-
-
+        // TEST MACOS
+        // let dirPath = '/Users/scottike/Downloads/rs-' + DATE + ''
         const files = fs.readdirSync(dirPath);
 
         // Map files with full path and filter only regular files (not directories)
@@ -1095,9 +990,10 @@ function getFilesInRecommendationsDirectory() {
             .map(file => path.join(dirPath, file))
             .filter(file => fs.statSync(file).isFile())
             .filter(file => !(file.endsWith('recommendation.json')))
+            .filter(file => (file.endsWith('.json')))
         return fileList
     } catch (error) {
-        console.error('Error reading recommendations directory:', error)
+        console.error('Error reading directory:', error)
         return []
     }
 }
@@ -1112,8 +1008,7 @@ function printResults() {
     let losers = 0
     let bes = 0
 
-    // console.log('\nMarks TOS Live MEIC Results for ' + DATE + ': ')
-    console.log("MarkBot TOS Live MEIC Results for " + DATE + ": ")
+    console.log('\n' + SPX_WHO + '\'s TOS Live MEIC Results for ' + DATE + ': ')
     for (let i = ics.length - 1; i >= 0; i--) {
 
         let ic = ics[i]
@@ -1130,23 +1025,27 @@ function printResults() {
             console.log("ERROR: unknown IC status")
         }
     }
-
+    
     const thumbs = totalPL >= 0 ? "👍" : "👎";
-    // console.log(`${thumbs} Total P/L: ${usCurrency.format(totalPL)}`);
-    // console.log(`${thumbs}`);
 
-    // ls = '\nTotal P/L: ' + usCurrency.format(totalPL)
-    ls = `\nTotal P/L: ${usCurrency.format(totalPL)} ${thumbs} `;
+    ls = '\nTotal P/L: ' + usCurrency.format(totalPL)
     console.log(ls)
     ls = 'Entries: ' + entries.toFixed(0)
     console.log(ls)
     ls = 'Winners: ' + winners.toFixed(0)
     console.log(ls)
-    ls = 'Break Evens: ' + bes.toFixed(0)
+    ls = 'BreakEvens: ' + bes.toFixed(0)
     console.log(ls)
     ls = 'Losers: ' + losers.toFixed(0)
     console.log(ls)
 
+    const EARLY_FILE=SPX_HOME + '/' + DATE + '/omeic/tos/positions/EARLY'
+    if (fs.existsSync(EARLY_FILE)) {
+        ls = 'EarlyPT: YES'
+    } else {
+        ls = 'EarlyPT: No'
+    }
+    console.log(ls)
 
     if (itms && itms.length > 0) {
         let itmTotal = 0
@@ -1164,6 +1063,8 @@ function printResults() {
     for (let i = ics.length - 1; i >= 0; i--) {
 
         let ic = ics[i]
+
+        // console.log(JSON.stringify(ic, null, 2))
 
         ls = '\n*** IC ' + ic.time + (ic.stopRisk ? ' (' + ic.stopRisk + ') ' : ' ') + ic.status
         ls = ls + ' ' + usCurrency.format(ic.pl)
@@ -1195,8 +1096,8 @@ function printResults() {
             putStoppedTime = ' ' + ic.putSpread.stoppedTime
             putEarlyTime = ''
         } else {
+            putShortStopPrice = ' ' + usCurrency.format(ic.putSpread.stopPrice)
             putFilledPrice = ''
-            putShortStopPrice = ''
             putSlippage  = ''
             putLongSTCPrice = ''
             putStoppedTime = ''
@@ -1218,9 +1119,9 @@ function printResults() {
         ls = ls + ' ' + ic.putSpread.status
         ls = ls + '' + putStoppedTime
         ls = ls + '' + putEarlyTime
-        // ls = ls + '' + putShortStopPrice
+        ls = ls + '' + putShortStopPrice
         ls = ls + '' + putFilledPrice
-        // ls = ls + '' + putSlippage
+        ls = ls + '' + putSlippage
         ls = ls + '' + putLongSTCPrice
         ls = ls + ' ' + usCurrency.format(ic.putSpread.pl)
         console.log(ls)
@@ -1249,8 +1150,8 @@ function printResults() {
             callStoppedTime = ' ' + ic.callSpread.stoppedTime
             callEarlyTime = ''
         } else {
+            callShortStopPrice =  ' ' + usCurrency.format(ic.callSpread.stopPrice)
             callFilledPrice = ''
-            callShortStopPrice = ''
             callSlippage  = ''
             callLongSTCPrice = ''
             callStoppedTime = ''
@@ -1270,12 +1171,11 @@ function printResults() {
         // ls = ls + ' $' + callLongPrice
         ls = ls + ' ' + usCurrency.format(callActualNetCredit)
         ls = ls + ' ' + ic.callSpread.status
-        if (ic.callSpread)
         ls = ls + '' + callStoppedTime
         ls = ls + '' + callEarlyTime
-        // ls = ls + '' + callShortStopPrice
+        ls = ls + '' + callShortStopPrice
         ls = ls + '' + callFilledPrice
-        // ls = ls + '' + callSlippage
+        ls = ls + '' + callSlippage
         ls = ls + '' + callLongSTCPrice
         ls = ls + ' ' + usCurrency.format(ic.callSpread.pl)
         console.log(ls)
@@ -1290,7 +1190,6 @@ function printResults() {
             console.log('ITM ' + itm.longShort + ' ' + itm.putCall + ' ' + _o.strike + ' (' + itm.spx_close + ') ' + usCurrency.format(itm.amount))
             itmTotal += itm.amount
         })
-//         console.log('Actual P/L for the day including ITM losses: ' + usCurrency.format(totalPL + itmTotal))
     }
 
 }
@@ -1326,14 +1225,18 @@ function exportCSV() {
         }
 
         // dump the summary info
-        // console.log('MEIC Results:,' + DATE)
         console.log('Entity,Date,What,Value')
-        // console.log('SUMMARY,' + DATE + ',Total P/L,' + usCurrency.format(totalPL * 100))
         console.log('SUMMARY,' + DATE + ',Total P/L,' + usCurrency.format(totalPL))
         console.log('SUMMARY,' + DATE + ',Entries,' + entries.toFixed(0))
         console.log('SUMMARY,' + DATE + ',Winners,' + winners.toFixed(0))
-        console.log('SUMMARY,' + DATE + ',Break Evens,' + bes.toFixed(0))
+        console.log('SUMMARY,' + DATE + ',BreakEvens,' + bes.toFixed(0))
         console.log('SUMMARY,' + DATE + ',Losers,' + losers.toFixed(0))
+        const EARLY_FILE=SPX_HOME + '/' + DATE + '/omeic/tos/positions/EARLY'
+        if (fs.existsSync(EARLY_FILE)) {
+            console.log('SUMMARY,' + DATE + ',EarlyPT,Yes')
+        } else {
+            console.log('SUMMARY,' + DATE + ',EarlyPT,No')
+        }
     }
 
     if (SELECTION === 'ALL' || SELECTION === 'ICS') {

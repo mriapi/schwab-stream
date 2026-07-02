@@ -284,16 +284,43 @@ def generate_order_STO_spread_with_triggers(short_sym, short_bid, long_sym, long
 
 
 
+
+def generate_buy_to_close_opt_form(symbol, qty):
+
+    abs_qty = abs(qty)
+
+        # Create the JSON order
+    json_order = {
+          "orderType": "MARKET",
+          "session": "NORMAL",
+          "duration": "DAY",
+          "orderStrategyType": "SINGLE",
+          "orderLegCollection": [
+            {
+              "instruction": "BUY_TO_CLOSE",
+              "quantity": abs_qty,
+              "instrument": {
+                "symbol": symbol,
+                "assetType": "OPTION"
+              }
+            }
+          ]
+    }
+
+    return json_order
+
+
+
+
+
 def generate_ITM_protection_order_form(short_sym, long_sym, qty):
 
 
     # Create the JSON order
     json_order = {
-        # "childOrderStrategies": [
-        #     {
+
         "orderType": "MARKET",
         "session": "NORMAL",
-        # "stopPrice": f"{stop_price:.2f}",
         "duration": "DAY",
         "orderStrategyType": "TRIGGER",
         "orderLegCollection": [
@@ -325,9 +352,39 @@ def generate_ITM_protection_order_form(short_sym, long_sym, qty):
             }
         ]
     }
-    #     ]
-    # }
 
+    return json_order
+
+
+
+
+def generate_btc_spread_order_form(short_sym, long_sym, qty):
+
+    json_order = {
+        "orderType": "MARKET",
+        "session": "NORMAL",
+        "duration": "DAY",
+        "orderStrategyType": "SINGLE",
+
+        "orderLegCollection": [
+            {
+                "instruction": "BUY_TO_CLOSE",
+                "quantity": qty,
+                "instrument": {
+                    "symbol": short_sym,
+                    "assetType": "OPTION"
+                }
+            },
+            {
+                "instruction": "SELL_TO_CLOSE",
+                "quantity": qty,
+                "instrument": {
+                    "symbol": long_sym,
+                    "assetType": "OPTION"
+                }
+            }
+        ]
+    }
 
     return json_order
 
@@ -384,6 +441,8 @@ def place_order(order_form):
         return
 
     return success_flag
+
+
 
 
 def enter_ic_with_triggers(
@@ -581,6 +640,330 @@ def enter_ic_with_triggers(
     return order_form, order_id, order_details
     
 
+
+
+def exit_spread(
+        short_sym, 
+        long_sym,
+        qty):
+    
+    status_code = 0
+    real_flag = True
+    order_form = order_id = order_details = None
+
+    acct_num, rx_acctHash = mri_schwab_lib.get_account()
+    rx_accessToken = mri_schwab_lib.get_access_token()
+
+
+    if acct_num is None or rx_acctHash is None:
+        print(f'exit_spread error: acct_num:{acct_num}, acct_hash:{rx_acctHash}')
+        return
+
+
+    
+    
+    # print(f'enter ic 001 \ncall_short:{call_short_leg}\ncall_long:{call_long_leg}\nput_short:{put_short_leg}\nput_long:{put_long_leg}, qty:{qty}')
+    # print(f'enter ic 002 \nrx_accessToken:{rx_accessToken}\nrx_acctHash:{rx_acctHash}')
+
+    try:
+
+        # order_form = generate_ITM_protection_order_form(short_sym, long_sym, qty)
+        order_form = generate_btc_spread_order_form(short_sym, long_sym, qty)
+
+
+        if real_flag == True:
+            info_str = f'Real trading mode is True.  Order to exit spread WILL be placed'
+            print(info_str)
+            meic.post_tranche_data(info_str)
+            meic.persist_string(info_str)
+
+
+            # print(f'303 rx_acctHas type:{type(rx_acctHash)}, value:<{rx_acctHash}>')
+            url = f"https://api.schwabapi.com/trader/v1/accounts/{rx_acctHash}/orders"
+            # print(f'304 url type:{type(url)}, value:<{url}>')
+
+
+            # print(f'395 placing order, rx_account_hash:{rx_acctHash}, url:{url}, rx_accessToken:{rx_accessToken}')
+
+
+
+            # Set up headers
+            headers = {
+                "accept": "*/*",
+                "Authorization": f"Bearer {rx_accessToken}",
+                "Content-Type": "application/json",
+
+            }
+
+            # print(f'027\n  url:<{url}>\n  headers:<{headers}>\n  order_form:<{order_form}>')
+
+
+
+
+            # order_form = {
+            #     "complexOrderStrategyType": "NONE",
+            #     "orderType": "LIMIT",
+            #     "session": "NORMAL",
+            #     "price": "0.05",
+            #     "duration": "DAY",
+            #     "orderStrategyType": "SINGLE",
+            #     "orderLegCollection": [
+            #         {
+            #             "instruction": "BUY_TO_OPEN",
+            #             "quantity": 1,
+            #             "instrument": {
+            #                 "symbol": "SPXW  250520C05970000",
+            #                 "assetType": "OPTION"
+            #             }
+            #         }
+            #     ]
+            # }
+
+
+            # Make the POST request
+            # resp = requests.post(url, headers=headers, data=order_form)
+
+
+            resp = requests.post(url, headers=headers, json=order_form)
+
+            status_code = resp.status_code
+
+
+            # Print response details
+            print(f'exit spread {short_sym}/{long_sym} Status Code: {resp.status_code}')
+            print(f"Response Body: {resp.text}")
+
+
+
+
+
+
+
+            # print(f'910 streamer.place_order resp:{resp}')
+
+
+
+            info_str = "\nExit spread Placed order:"
+            print(info_str)
+            meic.post_tranche_data(info_str)
+
+            info_str = f"Exit spread Response code: {status_code}"
+            print(info_str)
+            meic.post_tranche_data(info_str)
+
+
+            # Print all response headers
+            # print("\nall Response header items:")
+
+            # for header, value in resp.headers.items():
+            #     print(f"{header}: {value}")
+
+            # print()
+
+            info_str = f" "
+            print(info_str)
+            meic.post_tranche_data(info_str)
+            meic.persist_string(info_str)
+            
+
+            # get the order ID - if order is immediately filled then the id might not be returned
+            order_id = resp.headers.get('location', '/').split('/')[-1]
+
+            info_str = f"Order id: {order_id}"
+            print(info_str)
+            meic.post_tranche_data(info_str)
+            meic.persist_string(info_str)
+
+            # print(f'\nGet specific {opt_type} spread order details')
+            # print(client.order_details(hash, order_id).json())
+
+            try:
+                # order_details = schwab_client.order_details(hash, order_id).json()
+                url = f"https://api.schwabapi.com/trader/v1/accounts/{rx_acctHash}/orders/{order_id}"
+                # print(f'294-1 url:{url}')
+
+                headers = {
+                    "accept": "application/json",
+                    "Authorization": f"Bearer {rx_accessToken}"
+                }
+
+                response = requests.get(url, headers=headers)
+                # print(f'294-3 response:{response}')
+                order_details = response.json()
+                # print(f'294-8 order_details:{order_details}')
+
+            except Exception as e:
+                info_str = f'Error with client.order_details:{e}'
+                print(info_str)
+                meic.post_tranche_data(info_str)
+                meic.persist_string(info_str)
+                order_details = None
+                return status_code, order_form, order_id, order_details
+
+        else:
+            info_str = f'578002 Real/live trading mode flag is False.  Order NOT placed'
+            print(info_str)
+            meic.post_tranche_data(info_str)
+            meic.persist_string(info_str)
+
+            return status_code, order_form, order_id, order_details
+
+
+    except Exception as e:
+        print(f"Error in exit_spread(): {e}, no order was placed")
+        return status_code, order_form, order_id, order_details
+    
+    return status_code, order_form, order_id, order_details
+    
+
+
+
+def exit_short(
+        short_sym, 
+        qty):
+    
+    status_code = 0
+    real_flag = True
+    order_form = order_id = order_details = None
+
+    acct_num, rx_acctHash = mri_schwab_lib.get_account()
+    rx_accessToken = mri_schwab_lib.get_access_token()
+
+
+    if acct_num is None or rx_acctHash is None:
+        print(f'exit_short error: acct_num:{acct_num}, acct_hash:{rx_acctHash}')
+        return
+
+
+    
+    
+    # print(f'enter ic 001 \ncall_short:{call_short_leg}\ncall_long:{call_long_leg}\nput_short:{put_short_leg}\nput_long:{put_long_leg}, qty:{qty}')
+    # print(f'enter ic 002 \nrx_accessToken:{rx_accessToken}\nrx_acctHash:{rx_acctHash}')
+
+    try:
+
+        order_form = generate_buy_to_close_opt_form(short_sym, qty)
+
+        if real_flag == True:
+            info_str = f'Real trading mode is True.  Order to exit short WILL be placed'
+            print(info_str)
+            meic.post_tranche_data(info_str)
+            meic.persist_string(info_str)
+
+
+            # print(f'303 rx_acctHas type:{type(rx_acctHash)}, value:<{rx_acctHash}>')
+            url = f"https://api.schwabapi.com/trader/v1/accounts/{rx_acctHash}/orders"
+            # print(f'304 url type:{type(url)}, value:<{url}>')
+
+
+            # print(f'395 placing order, rx_account_hash:{rx_acctHash}, url:{url}, rx_accessToken:{rx_accessToken}')
+
+
+
+            # Set up headers
+            headers = {
+                "accept": "*/*",
+                "Authorization": f"Bearer {rx_accessToken}",
+                "Content-Type": "application/json",
+
+            }
+
+            # print(f'027\n  url:<{url}>\n  headers:<{headers}>\n  order_form:<{order_form}>')
+
+
+
+
+            # Make the POST request
+            # resp = requests.post(url, headers=headers, data=order_form)
+
+
+            resp = requests.post(url, headers=headers, json=order_form)
+
+            status_code = resp.status_code
+
+            # Print response details
+            print(f'exit short {short_sym} Status Code: {resp.status_code}')
+            print(f"Response Body: {resp.text}")
+
+
+
+
+            info_str = "\nExit short Placed order:"
+            print(info_str)
+            meic.post_tranche_data(info_str)
+
+            info_str = f"Exit short Response code: {resp}"
+            print(info_str)
+            meic.post_tranche_data(info_str)
+
+
+            # Print all response headers
+            # print("\nall Response header items:")
+
+            # for header, value in resp.headers.items():
+            #     print(f"{header}: {value}")
+
+            # print()
+
+            info_str = f" "
+            print(info_str)
+            meic.post_tranche_data(info_str)
+            meic.persist_string(info_str)
+            
+
+            # get the order ID - if order is immediately filled then the id might not be returned
+            order_id = resp.headers.get('location', '/').split('/')[-1]
+
+            info_str = f"Order id: {order_id}"
+            print(info_str)
+            meic.post_tranche_data(info_str)
+            meic.persist_string(info_str)
+
+            # print(f'\nGet specific {opt_type} spread order details')
+            # print(client.order_details(hash, order_id).json())
+
+            try:
+                # order_details = schwab_client.order_details(hash, order_id).json()
+                url = f"https://api.schwabapi.com/trader/v1/accounts/{rx_acctHash}/orders/{order_id}"
+                # print(f'294-1 url:{url}')
+
+                headers = {
+                    "accept": "application/json",
+                    "Authorization": f"Bearer {rx_accessToken}"
+                }
+
+                response = requests.get(url, headers=headers)
+
+
+                # print(f'294-3 response:{response}')
+                order_details = response.json()
+                # print(f'294-8 order_details:{order_details}')
+
+            except Exception as e:
+                info_str = f'Error with client.order_details:{e}'
+                print(info_str)
+                meic.post_tranche_data(info_str)
+                meic.persist_string(info_str)
+                order_details = None
+                return status_code, order_form, order_id, order_details
+
+        else:
+            info_str = f'578002 Real/live trading mode flag is False.  Order NOT placed'
+            print(info_str)
+            meic.post_tranche_data(info_str)
+            meic.persist_string(info_str)
+
+            return status_code, order_form, order_id, order_details
+
+
+    except Exception as e:
+        print(f"Error in exit_short(): {e}, no order was placed")
+        return order_form, order_id, order_details
+    
+    return status_code, order_form, order_id, order_details
+    
+
+    
     
 
 
