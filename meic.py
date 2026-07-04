@@ -55,8 +55,8 @@ import traceback
 importlib.reload(meic_config)
 
 
-#              09:28    09:58    10:28    10:58    11:28    11:58
-meic_times = ["12:28", "12:58", "13:28", "13:58", "14:28", "14:58"]
+# #              09:28    09:58    10:28    10:58    11:28    11:58
+# meic_times = ["12:28", "12:58", "13:28", "13:58", "14:28", "14:58"]
 meic_times = meic_config.config_meic_times
 
 live_trading_flag = True
@@ -66,26 +66,27 @@ max_meic_contracts = meic_config.MAX_CONTRACTS
 multiple_meic_contracts_flag = meic_config.MULTIPLE_CONTRACTS_FLAG
 
 do_meic_now = False
+do_exit_now = False
 
 
-no_trade_dates = [
-    # "08/04/25",
-    "08/20/25",
-    "8/29/25",
-    "9/1/25",
-    "9/17/25",
-    "9/30/25",
-    "10/8/25",
-    "10/29/25",
-    "10/31/25",
-    "11/19/25",
-    "11/27/25",
-    "11/28/25",
-    "12/10/25",
-    "12/24/25",
-    "12/25/25",
-    "12/31/25"
-]
+# no_trade_dates = [
+#     # "08/04/25",
+#     "08/20/25",
+#     "8/29/25",
+#     "9/1/25",
+#     "9/17/25",
+#     "9/30/25",
+#     "10/8/25",
+#     "10/29/25",
+#     "10/31/25",
+#     "11/19/25",
+#     "11/27/25",
+#     "11/28/25",
+#     "12/10/25",
+#     "12/24/25",
+#     "12/25/25",
+#     "12/31/25"
+# ]
 
 no_trade_dates = meic_config.config_no_trade_dates
 
@@ -1820,9 +1821,13 @@ def process_message():
 
 
 
-                    if (reached_pl_limit is not None) and (reached_pl_limit is True):
+                    if ((reached_pl_limit is not None) and (reached_pl_limit is True)) or do_exit_now is True:
 
-                        print(f'2 reached PL is True')
+                        if do_exit_now is True:
+                            print(f'2 do exit now is True')
+
+                        if ((reached_pl_limit is not None) and (reached_pl_limit is True)):
+                            print(f'2 reached PL is True')
 
                         # taken_profit_flag = reached_pl_limit
 
@@ -1830,13 +1835,11 @@ def process_message():
 
                     # if True:
 
-                        if taken_profit_flag is False:
+                        if taken_profit_flag is False or do_exit_now is True:
                         # if True:
 
                             print(f'setting prev taken flag to tanken flag and processing the early exit') 
                             prev_taken_profit_flag = taken_profit_flag = True
-
-                        
 
 
                             my_start_of_date_dt = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -1870,7 +1873,8 @@ def process_message():
 
 
                             print(f'\n\n!^!^!^!^! profit target reached !^!^!^!^!^!, current:{current_pl:.2f}, target:{target_pl}\n\n')
-                            
+                            do_exit_now = False
+
                             time_module.sleep(1)
                             print(f'328034083 1')
                             gqws_success_flag, gqws_qty = mri_schwab_lib.get_qty_of_working_stops()
@@ -1911,6 +1915,8 @@ def process_message():
 
 
                             profit_take.persist_profit_taken(taken_profit_flag)
+
+                            print(f'5489052 finished take-profit early exit, do_exit_now:{do_exit_now}')
 
                             try:
                             
@@ -3675,6 +3681,7 @@ def keyboard_handler_task():
     """ Polling loop for keyboard monitoring in a separate thread """
     global end_flag
     global do_meic_now
+    global do_exit_now
 
 
     no_key_count = 0
@@ -3702,6 +3709,12 @@ def keyboard_handler_task():
                 if input_str == "meicnow":
                     print(f'\n>> meicnow detected <<\n')
                     do_meic_now = True
+                    input_str = ""
+
+                if input_str == "exitnow":
+                    print(f'\n>> exitnow detected <<\n')
+                    # do_exit_now = True   # FIXME set do_exit_now
+                    input_str = ""
 
                 if key == "":
                     # print(f' Null key, current input str:<{input_str}>')
