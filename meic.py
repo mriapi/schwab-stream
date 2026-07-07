@@ -984,6 +984,8 @@ def process_message():
 
     global gbl_short_positions, gbl_long_positions
 
+    global do_exit_now
+
     check_balance_cnt = 0
 
     print(f'process message thread checking for market open')
@@ -3137,7 +3139,7 @@ def trigger_meic_check():
             trigger_seconds = 120
             continue
         
-        print(f'trigger_meic_check loop, trigger_seconds:{trigger_seconds}')
+        # print(f'trigger_meic_check loop, trigger_seconds:{trigger_seconds}')
         trigger_seconds -= 1
 
         if trigger_seconds <= 0:
