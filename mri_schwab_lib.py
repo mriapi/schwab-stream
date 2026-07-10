@@ -241,7 +241,7 @@ def get_qty_of_working_stops():
 
     
     if success_flag is True:
-        print(f'gqws220 qty of working stop orders:{qty_working_stops}')
+        # print(f'gqws220 qty of working stop orders:{qty_working_stops}')
         pass
 
     else:

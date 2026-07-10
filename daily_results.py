@@ -7,6 +7,7 @@ from email.utils import make_msgid
 import mimetypes
 from datetime import date
 import mri_schwab_lib
+from pathlib import Path
 
 
 
@@ -83,12 +84,25 @@ def all():
     # )
 
 
+
+
+    # result_genLogs = subprocess.run(
+    # ["node", "genLogs.js"],
+    # # cwd=r"C:\Users\mri17\Documents\repos\schwab-stream",   # <-- FIX
+    # cwd=r"C:\repos\schwab-stream",   # <-- FIX
+    # capture_output=True,
+    # text=True,
+    # encoding="utf-8"
+    # )
+
+    project_root = Path(__file__).parent
+
     result_genLogs = subprocess.run(
-    ["node", "genLogs.js"],
-    cwd=r"C:\Users\mri17\Documents\repos\schwab-stream",   # <-- FIX
-    capture_output=True,
-    text=True,
-    encoding="utf-8"
+        ["node", "genLogs.js"],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8"
     )
 
 
@@ -213,6 +227,7 @@ def all():
 # mri_schwab_lib.persist_spx_candle(spx_candle)
 # time_str = "09:14:49"
 # mri_schwab_lib.persist_early_indicator(time_str)
+
 # display = all()
 
 
