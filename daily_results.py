@@ -133,8 +133,8 @@ def all():
 
 
 
-    receiver_email = ["mri1700@gmail.com"]
-    # receiver_email = ["mri1700@gmail.com", "rudy.isaacson@gmail.com", "scottike@gmail.com"]
+    # receiver_email = ["mri1700@gmail.com"]
+    receiver_email = ["mri1700@gmail.com", "rudy.isaacson@gmail.com", "scottike@gmail.com"]
 
 
 

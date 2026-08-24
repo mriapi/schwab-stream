@@ -546,6 +546,8 @@ def enter_ic_with_triggers(
             # resp = requests.post(url, headers=headers, data=order_form)
 
 
+            # meic.set_ic_order_placed_time()
+
             resp = requests.post(url, headers=headers, json=order_form)
 
 
@@ -1011,19 +1013,19 @@ def generate_order_STO_IC_with_triggers(
 
     long_leg_factor_adj = long_leg_factor
     if call_long_ask > 0.5:
-        long_leg_factor_adj = long_leg_factor_adj * 1.05
+        long_leg_factor_adj = long_leg_factor_adj * 1.06
     
     if call_long_ask > 1:
-        long_leg_factor_adj = long_leg_factor_adj * 1.05
+        long_leg_factor_adj = long_leg_factor_adj * 1.06
 
     if call_long_ask > 1.5:
-        long_leg_factor_adj = long_leg_factor_adj * 1.05
+        long_leg_factor_adj = long_leg_factor_adj * 1.06
 
     if call_long_ask > 2.0:
-        long_leg_factor_adj = long_leg_factor_adj * 1.05
+        long_leg_factor_adj = long_leg_factor_adj * 1.06
 
     if call_long_ask > 2.5:
-        long_leg_factor_adj = long_leg_factor_adj * 1.05
+        long_leg_factor_adj = long_leg_factor_adj * 1.06
 
 
 
