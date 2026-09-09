@@ -9,6 +9,7 @@ import subprocess
 import sys
 from dotenv import load_dotenv
 import pandas as pd
+import save_tranche
 
 
 
@@ -1248,6 +1249,8 @@ def process_message():
                 # target_credit) = recommender.generate_recommendation(gbl_short_positions, gbl_long_positions,payload_stripped)
                 target_credit) = recommender.generate_recommendation(gbl_short_positions, gbl_long_positions,chain_quotes)
 
+            # print(f'28934 chain quotes type:{type(chain_quotes)}, data:\n{chain_quotes}')
+
             spx_chain = chain_quotes = None
 
             # ensue that we have all four recommendations
@@ -1594,6 +1597,11 @@ def process_message():
                                 tranche_spx_str = f'{spx_price:.2f}'
                                 tranche_atm_straddle_str = f'{atm_straddle:.2f}'
                                 tranche_target_credit_str = f'{target_credit_fl:.2f}'
+
+                                # save_tranche.initialize_tranche_dict()
+                                # save_tranche.set_tranche_time()
+                                # save_tranche.set_tranche_value("spx", spx_price)
+
 
 
                                 # short_sym = call_short[0]['symbol']
@@ -2776,7 +2784,7 @@ def check_trading_day():
     is_no_trade_day = any(normalize_date(dt) == today for dt in no_trade_dates)
 
 
-    # # forced blackout day
+    # # forced blackout
     # is_no_trade_day = True
     # print(f'FIXME forced BLACKOUT')
     

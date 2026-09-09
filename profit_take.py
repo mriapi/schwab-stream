@@ -62,9 +62,11 @@ def test_pt_sleep():
     print(f'0220 end testing PT sleep')
 
 
-
+total_get_buying_power_errors = 0
 
 def detect_profit_target():
+
+    global total_get_buying_power_errors
 
     reached_target = False
     current_pl = 0
