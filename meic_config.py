@@ -27,11 +27,11 @@
 # #                     07:58    08:28    08:58    09:43    10:58    12:28
 # config_meic_times = ["10:58", "11:28", "11:58", "12:43", "13:58", "14:28"] # 
 
-#                      09:58    10:28    11:13    11:58
-config_meic_times = [ "12:58", "13:28", "14:13", "14:58"] # 
+# #                      09:58    10:28    11:13    11:43
+# config_meic_times = [ "12:58", "13:28", "14:13", "14:43"] # 
 
-
-
+#                      09:13    09:43    10:13    10:28    11:13
+config_meic_times = [ "12:13", "12:43", "13:13", "13:28", "14:13"] # 
 
 
 config_live_trading_flag = True
@@ -90,6 +90,7 @@ config_no_trade_dates = [
     "07/24/26", # Bad MEIC performance
     "07/31/26", # EOM
     "08/19/26", # FOMC minutes
+    "08/28/26", # Mark's decision based on price action 
     "08/31/26", # EOM
     "09/07/26", # Holiday
     "09/16/26", # FOMC statement
@@ -112,15 +113,16 @@ config_no_trade_dates = [
 # LONG_LEG_STOP_FACTOR = 1.4
 # LONG_LEG_STOP_FACTOR = 1.45
 # LONG_LEG_STOP_FACTOR = 1.5
-LONG_LEG_STOP_FACTOR = 1.6
+LONG_LEG_STOP_FACTOR = 1.7
 
-# STOP_LOSS_FACTOR = 0.80
+# STOP_LOSS_FACTOR = 0.95  # MEIC+
+STOP_LOSS_FACTOR = 0.80
 # STOP_LOSS_FACTOR = 0.78
-STOP_LOSS_FACTOR = 0.76
+# STOP_LOSS_FACTOR = 0.76
 # STOP_LOSS_FACTOR = 0.75
 
 MULTIPLE_CONTRACTS_FLAG=True
-MAX_CONTRACTS=2
+MAX_CONTRACTS=1
 
 
 
@@ -128,9 +130,9 @@ MAX_CONTRACTS=2
 # TAKE_PROFIT_FACTOR = 300  # $3600 for 6 entries/2 contracts
 # TAKE_PROFIT_FACTOR = 200  # $2400 for 6/2
 
-# TAKE_PROFIT_FACTOR = 100  # $1200 for 6/2
+TAKE_PROFIT_FACTOR = 100  # $1200 for 6/2
 
-TAKE_PROFIT_FACTOR = 85  # $1020 for 6/2
+# TAKE_PROFIT_FACTOR = 85  # $1020 for 6/2
 # TAKE_PROFIT_FACTOR = 80  # $960 for 6/2
 # TAKE_PROFIT_FACTOR = 75  # $900 for 6/2
 # TAKE_PROFIT_FACTOR = 65  # $780 for 6/2

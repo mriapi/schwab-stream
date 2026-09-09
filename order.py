@@ -6,6 +6,7 @@ import requests
 import mri_schwab_lib
 import meic_config
 import importlib
+import save_tranche
 
 
 # # LONG_LEG_STOP_FACTOR = 1.25
@@ -587,6 +588,8 @@ def enter_ic_with_triggers(
             print(info_str)
             meic.post_tranche_data(info_str)
             meic.persist_string(info_str)
+
+            
             
 
             # get the order ID - if order is immediately filled then the id might not be returned
@@ -599,6 +602,18 @@ def enter_ic_with_triggers(
 
             # print(f'\nGet specific {opt_type} spread order details')
             # print(client.order_details(hash, order_id).json())
+
+            # save_tranche.set_tranche_value("orderId", order_id)
+
+            # save_tranche.set_tranche_value("callShortSym", call_short_sym)
+            # save_tranche.set_tranche_value("callShortBid", call_short_bid)
+            # save_tranche.set_tranche_value("callLongAsk", call_long_ask)
+
+            # save_tranche.set_tranche_value("putShortSym", put_short_sym)
+            # save_tranche.set_tranche_value("putShortBid", put_short_bid)
+            # save_tranche.set_tranche_value("putLongAsk", put_long_ask)
+            
+
 
             try:
                 # order_details = schwab_client.order_details(hash, order_id).json()
